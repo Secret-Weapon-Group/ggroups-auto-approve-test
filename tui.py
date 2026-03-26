@@ -245,11 +245,13 @@ class ModeratorApp(App):
         messages: list[PendingMessage],
         on_approve: callable = None,
         on_refresh: callable = None,
+        model: str = "",
     ):
         super().__init__()
         self.messages = messages
         self.on_approve = on_approve
         self.on_refresh = on_refresh
+        self.model = model
         self._approved = False
 
     @property
@@ -260,9 +262,11 @@ class ModeratorApp(App):
         group_name = "forecast-chat"  # TODO: extract from URL
         ok_count = sum(1 for m in self.messages if m.status == "ok")
         hold_count = sum(1 for m in self.messages if m.status == "hold")
+        model_label = f"  model: {self.model}" if self.model else ""
         yield Static(
             f"Google Groups Moderator — {group_name}  "
-            f"({len(self.messages)} pending, {ok_count} OK, {hold_count} HOLD)",
+            f"({len(self.messages)} pending, {ok_count} OK, {hold_count} HOLD)"
+            f"{model_label}",
             id="title-bar",
         )
         yield DataTable(id="msg-table")
@@ -298,11 +302,13 @@ class ModeratorApp(App):
     def _update_title(self):
         ok_count = sum(1 for m in self.messages if m.status == "ok")
         hold_count = sum(1 for m in self.messages if m.status == "hold")
+        model_label = f"  model: {self.model}" if self.model else ""
         try:
             title = self.query_one("#title-bar", Static)
             title.update(
                 f"Google Groups Moderator — forecast-chat  "
                 f"({len(self.messages)} pending, {ok_count} OK, {hold_count} HOLD)"
+                f"{model_label}"
             )
         except NoMatches:
             pass
@@ -359,6 +365,7 @@ def run_tui(
     messages: list[PendingMessage],
     on_approve: callable = None,
     on_refresh: callable = None,
+    model: str = "",
 ) -> list[PendingMessage] | None:
     """Run the TUI and return messages to approve, or None if quit."""
     import asyncio
@@ -372,6 +379,6 @@ def run_tui(
     except RuntimeError:
         asyncio.set_event_loop(asyncio.new_event_loop())
 
-    app = ModeratorApp(messages, on_approve=on_approve, on_refresh=on_refresh)
+    app = ModeratorApp(messages, on_approve=on_approve, on_refresh=on_refresh, model=model)
     result = app.run()
     return result

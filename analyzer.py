@@ -20,6 +20,13 @@ client = AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # seconds
 
+MODEL_MAP = {
+    "opus": "claude-opus-4-0",
+    "sonnet": "claude-sonnet-4-5-20250514",
+    "haiku": "claude-haiku-4-5-20251001",
+}
+DEFAULT_MODEL = "haiku"
+
 
 async def _api_call_with_retry(**kwargs):
     """Call the Anthropic API with retry on 500/529 errors."""
@@ -174,7 +181,7 @@ Summarize this message in 2-3 concise sentences. Focus on the key points and any
 """
 
 
-async def analyze_message(msg: PendingMessage) -> PendingMessage:
+async def analyze_message(msg: PendingMessage, model: str = DEFAULT_MODEL) -> PendingMessage:
     """Analyze a single message and set its AI recommendation."""
     try:
         trimmed = trim_for_analysis(msg.body) if msg.body else msg.snippet
@@ -186,7 +193,7 @@ async def analyze_message(msg: PendingMessage) -> PendingMessage:
         user_content = f"Subject: {msg.subject}\nFrom: {msg.sender}\n\nMessage body:\n{trimmed}"
 
         response = await _api_call_with_retry(
-            model="claude-opus-4-0",
+            model=MODEL_MAP[model],
             max_tokens=150,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],
@@ -227,7 +234,7 @@ async def analyze_message(msg: PendingMessage) -> PendingMessage:
     return msg
 
 
-async def summarize_message(msg: PendingMessage) -> str:
+async def summarize_message(msg: PendingMessage, model: str = DEFAULT_MODEL) -> str:
     """Generate a summary for a long message (>20 lines)."""
     trimmed = trim_for_analysis(msg.body) if msg.body else msg.snippet
     if len(trimmed) > 8000:
@@ -238,7 +245,7 @@ async def summarize_message(msg: PendingMessage) -> str:
 
     try:
         response = await _api_call_with_retry(
-            model="claude-opus-4-0",
+            model=MODEL_MAP[model],
             max_tokens=200,
             messages=[{
                 "role": "user",
@@ -251,7 +258,7 @@ async def summarize_message(msg: PendingMessage) -> str:
         return ""
 
 
-async def analyze_all(messages: list[PendingMessage], on_progress=None) -> list[PendingMessage]:
+async def analyze_all(messages: list[PendingMessage], on_progress=None, model: str = DEFAULT_MODEL) -> list[PendingMessage]:
     """Analyze all messages concurrently with progress tracking."""
     if not messages:
         return messages
@@ -261,7 +268,7 @@ async def analyze_all(messages: list[PendingMessage], on_progress=None) -> list[
 
     async def classify_with_progress(msg):
         nonlocal completed
-        await analyze_message(msg)
+        await analyze_message(msg, model=model)
         completed += 1
         if on_progress:
             on_progress(completed, total, "classify", msg)
@@ -277,7 +284,7 @@ async def analyze_all(messages: list[PendingMessage], on_progress=None) -> list[
 
         async def summarize_with_progress(msg):
             nonlocal summary_done
-            await summarize_message(msg)
+            await summarize_message(msg, model=model)
             summary_done += 1
             if on_progress:
                 on_progress(summary_done, len(long_msgs), "summarize", msg)

@@ -15,7 +15,7 @@ import time
 
 import config
 from scraper import GoogleGroupsScraper, PendingMessage
-from analyzer import analyze_all
+from analyzer import analyze_all, MODEL_MAP, DEFAULT_MODEL
 from tui import run_tui
 
 
@@ -46,7 +46,7 @@ def _fmt_elapsed(seconds: float) -> str:
     return f"{seconds:.1f}s"
 
 
-async def fetch_and_analyze(debug: bool = False) -> list[PendingMessage]:
+async def fetch_and_analyze(debug: bool = False, model: str = DEFAULT_MODEL) -> list[PendingMessage]:
     """Fetch pending messages, run AI analysis, and close the browser.
 
     The scraper is started and stopped within a single asyncio.run() call
@@ -102,8 +102,8 @@ async def fetch_and_analyze(debug: bool = False) -> list[PendingMessage]:
                     result = f" -> {msg.ai_recommendation}"
                 print(f"  [{i}/{total}] {label}: {subj}{result}", flush=True)
 
-            print("Running AI analysis...")
-            await analyze_all(messages, on_progress=on_ai_progress)
+            print(f"Running AI analysis (model: {model})...")
+            await analyze_all(messages, on_progress=on_ai_progress, model=model)
             hold_count = sum(1 for m in messages if m.ai_recommendation == "hold")
             print(f"AI done: {len(messages) - hold_count} approve, {hold_count} hold ({_fmt_elapsed(time.time() - t0)})")
         else:
@@ -143,7 +143,7 @@ async def approve_messages(scraper: GoogleGroupsScraper, messages: list[PendingM
         print("\nTip: Run with --debug for screenshots and logs to diagnose.")
 
 
-def main_flow(debug: bool = False):
+def main_flow(debug: bool = False, model: str = DEFAULT_MODEL):
     """Main flow: fetch -> analyze -> TUI -> approve.
 
     Split into separate asyncio.run() calls because Textual's app.run()
@@ -152,12 +152,12 @@ def main_flow(debug: bool = False):
     can't cross event loop boundaries).
     """
     # Phase 1: async fetch + analyze (scraper starts and stops here)
-    messages = asyncio.run(fetch_and_analyze(debug=debug))
+    messages = asyncio.run(fetch_and_analyze(debug=debug, model=model))
     if not messages:
         return
 
     # Phase 2: Synchronous TUI (runs its own event loop)
-    to_approve = run_tui(messages)
+    to_approve = run_tui(messages, model=model)
 
     # Phase 3: async approve (fresh scraper session)
     if to_approve:
@@ -178,9 +178,9 @@ def main_flow(debug: bool = False):
         print("No messages approved. Exiting.")
 
 
-async def auto_approve_flow():
+async def auto_approve_flow(model: str = DEFAULT_MODEL):
     """Auto-approve all AI-approved messages without TUI."""
-    messages = await fetch_and_analyze()
+    messages = await fetch_and_analyze(model=model)
     if not messages:
         return
 
@@ -212,6 +212,8 @@ def main():
     parser.add_argument("--login", action="store_true", help="Open browser for manual login")
     parser.add_argument("--auto-approve", action="store_true", help="Auto-approve AI-approved messages")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging and screenshots to debug/")
+    parser.add_argument("--model", choices=list(MODEL_MAP.keys()), default=DEFAULT_MODEL,
+                        help=f"AI model for analysis (default: {DEFAULT_MODEL})")
     args = parser.parse_args()
 
     if args.debug:
@@ -225,9 +227,9 @@ def main():
     if args.login:
         asyncio.run(do_login())
     elif args.auto_approve:
-        asyncio.run(auto_approve_flow())
+        asyncio.run(auto_approve_flow(model=args.model))
     else:
-        main_flow(debug=args.debug)
+        main_flow(debug=args.debug, model=args.model)
 
 
 if __name__ == "__main__":
