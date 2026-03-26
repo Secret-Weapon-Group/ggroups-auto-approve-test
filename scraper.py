@@ -84,17 +84,39 @@ class GoogleGroupsScraper:
         if self._playwright:
             await self._playwright.stop()
 
+    def _is_login_page(self) -> bool:
+        """Check if the current page is a Google login/sign-in page."""
+        url = self._page.url
+        return "accounts.google.com" in url or "signin" in url.lower()
+
+    async def _navigate_and_wait(self, url: str, timeout: int = 30000):
+        """Navigate to a URL and wait for redirects to settle."""
+        await self._page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+        await asyncio.sleep(2)
+        try:
+            await self._page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            pass  # networkidle can timeout on heavy pages; continue anyway
+
     async def ensure_logged_in(self) -> bool:
         """Check if we're logged in, return True if yes.
         If not logged in and running headless, returns False (caller should re-run with headless=False).
         If not logged in and running visible, waits for user to complete login.
+
+        In headless mode, verifies access to the pending-messages page specifically,
+        since the group root may be publicly viewable without auth.
         """
-        await self._page.goto(self.group_url, wait_until="domcontentloaded", timeout=30000)
-        await asyncio.sleep(1)
+        # In visible mode (--login flow), navigate to the group root to start login
+        target_url = self.group_url
+        if self.headless:
+            # In headless mode, verify the pending-messages page is accessible,
+            # since that's the page that requires moderator auth
+            target_url = f"{self.group_url}/pending-messages"
+
+        await self._navigate_and_wait(target_url)
 
         # Check if we're on a login page
-        url = self._page.url
-        if "accounts.google.com" in url or "signin" in url.lower():
+        if self._is_login_page():
             if self.headless:
                 return False  # Need to re-run in visible mode
 
@@ -121,6 +143,14 @@ class GoogleGroupsScraper:
         """Navigate to pending messages and extract them."""
         pending_url = f"{self.group_url}/pending-messages"
         await self._page.goto(pending_url, wait_until="domcontentloaded", timeout=30000)
+        # Wait for redirects to settle (Google may bounce through accounts.google.com)
+        await asyncio.sleep(2)
+        await self._page.wait_for_load_state("networkidle", timeout=10000)
+
+        # If we got redirected to login, the session isn't valid for this page
+        if self._is_login_page():
+            log.debug(f"Redirected to login page: {self._page.url}")
+            return []
 
         messages = []
 

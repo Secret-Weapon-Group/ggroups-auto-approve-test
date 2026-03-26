@@ -29,12 +29,28 @@ async def do_login():
     await scraper.start()
     try:
         logged_in = await scraper.ensure_logged_in()
-        if logged_in:
-            print("\nLogin successful! Session saved.")
-            print("You can now run without --login.")
-        else:
+        if not logged_in:
             print("\nLogin failed or was not completed.")
             sys.exit(1)
+
+        # Verify we can actually access the pending-messages page
+        print("Verifying access to pending messages...")
+        pending_url = f"{scraper.group_url}/pending-messages"
+        await scraper._navigate_and_wait(pending_url)
+        if scraper._is_login_page():
+            print("\nLogin succeeded but pending-messages page requires re-auth.")
+            print("Please log in again in the browser window...")
+            try:
+                await scraper._page.wait_for_url(
+                    "**/groups.google.com/**", timeout=300000
+                )
+                await asyncio.sleep(2)
+            except Exception:
+                print("\nLogin timed out.")
+                sys.exit(1)
+
+        print("\nLogin successful! Session saved.")
+        print("You can now run without --login.")
     finally:
         await scraper.stop()
 
