@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Use venv if available, else system python
+if [ -x "$REPO_ROOT/.venv/bin/python3" ]; then
+  PYTHON="$REPO_ROOT/.venv/bin/python3"
+else
+  PYTHON="python3"
+fi
+
+"$REPO_ROOT/bin/dependencies"
+# Exclude test_tui.py — it's a manual interactive diagnostic tool, not automated tests
+"$PYTHON" -m ruff check . --exclude test_tui.py
+"$PYTHON" -m pytest tests/ -n auto --cov --cov-report=term-missing --cov-fail-under=100

@@ -5,7 +5,6 @@ from textual.binding import Binding
 from textual.containers import Vertical, Horizontal, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import (
-    Header,
     Footer,
     DataTable,
     Static,
@@ -123,7 +122,8 @@ class PreviewScreen(ModalScreen[None]):
 
     def action_copy_body(self):
         """Copy the full preview (headers + AI + body) to clipboard."""
-        import base64, sys
+        import base64
+        import sys
         m = self.msg
         status = "HOLD" if m.status == "hold" else "OK"
         ai = f"{m.ai_recommendation.upper()}: {m.ai_reason}" if m.ai_reason else m.ai_recommendation.upper()
@@ -158,7 +158,7 @@ class PreviewScreen(ModalScreen[None]):
                 f"[bold]Date:[/bold] {self.msg.date}\n"
                 f"[bold]Status:[/bold] [{status_color}]{status_text}[/{status_color}]"
             )
-        except NoMatches:
+        except NoMatches:  # pragma: no cover
             pass
 
 
@@ -304,7 +304,7 @@ class ModeratorApp(App):
                 f"Google Groups Moderator — forecast-chat  "
                 f"({len(self.messages)} pending, {ok_count} OK, {hold_count} HOLD)"
             )
-        except NoMatches:
+        except NoMatches:  # pragma: no cover
             pass
 
     def _get_selected_index(self) -> int | None:

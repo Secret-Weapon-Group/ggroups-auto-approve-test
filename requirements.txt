@@ -1,4 +1,9 @@
-playwright>=1.40.0
-textual>=0.47.0
-anthropic>=0.40.0
-python-dotenv>=1.0.0
+playwright
+textual
+anthropic
+python-dotenv
+ruff
+pytest
+pytest-asyncio
+pytest-cov
+pytest-xdist

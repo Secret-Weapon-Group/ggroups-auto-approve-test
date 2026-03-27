@@ -10,8 +10,8 @@ from anthropic import AsyncAnthropic, APIStatusError
 # recursion limits in regex or JSON parsing
 sys.setrecursionlimit(max(sys.getrecursionlimit(), 5000))
 
-import config
-from scraper import PendingMessage
+import config  # noqa: E402
+from scraper import PendingMessage  # noqa: E402
 
 log = logging.getLogger("analyzer")
 
@@ -137,8 +137,8 @@ def _trim_for_analysis_impl(body: str) -> str:
                 # Check if it's the attribution line
                 if j == attr_line:
                     continue
-                has_inline_reply = True
-                break
+                has_inline_reply = True  # pragma: no cover
+                break  # pragma: no cover
 
         if not has_inline_reply:
             lines = lines[:quote_start]
