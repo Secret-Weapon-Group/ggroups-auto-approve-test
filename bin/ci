@@ -13,4 +13,4 @@ echo "=== Lint ==="
 
 echo ""
 echo "=== Tests ==="
-"$REPO_ROOT/.venv/bin/pytest" tests/ --cov --cov-report=term-missing --cov-fail-under=100
+"$REPO_ROOT/.venv/bin/pytest" tests/ -n auto --cov --cov-report=term-missing --cov-fail-under=100
