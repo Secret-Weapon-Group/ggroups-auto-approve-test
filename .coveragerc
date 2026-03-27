@@ -1,0 +1,14 @@
+[run]
+source =
+    main
+    scraper
+    analyzer
+    tui
+    config
+
+[report]
+show_missing = True
+fail_under = 100
+exclude_lines =
+    if __name__ == .__main__.:
+    pragma: no cover

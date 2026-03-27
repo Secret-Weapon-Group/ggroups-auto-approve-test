@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+echo "=== Dependencies ==="
+"$REPO_ROOT/bin/dependencies"
+
+echo ""
+echo "=== Lint ==="
+"$REPO_ROOT/.venv/bin/ruff" check . --exclude test_tui.py
+
+echo ""
+echo "=== Tests ==="
+"$REPO_ROOT/.venv/bin/pytest" tests/ --cov --cov-report=term-missing --cov-fail-under=100

@@ -1,12 +1,10 @@
 """Google Groups scraper using Playwright browser automation."""
 
 import asyncio
-import json
 import logging
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
 import config
@@ -196,7 +194,7 @@ class GoogleGroupsScraper:
         """Extract message details from a DOM element."""
         try:
             text = await elem.inner_text()
-            lines = [l.strip() for l in text.split("\n") if l.strip()]
+            lines = [line.strip() for line in text.split("\n") if line.strip()]
             if not lines:
                 return None
 
@@ -228,7 +226,7 @@ class GoogleGroupsScraper:
             # The expanded element's inner text contains everything:
             # sender, subject, body, footer. We want just the body portion.
             text = await element.inner_text()
-            lines = [l for l in text.split("\n")]
+            lines = list(text.split("\n"))
 
             # The first few lines are metadata (sender, subject, date).
             # The body starts after those. We already have sender/subject
