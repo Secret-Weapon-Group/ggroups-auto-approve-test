@@ -211,3 +211,6 @@ __marimo__/
 
 # Debug screenshots and logs
 debug/
+
+# Claude Code session cost tracking
+.claude/cost/
