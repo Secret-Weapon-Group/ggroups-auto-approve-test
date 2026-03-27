@@ -3,14 +3,14 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-echo "=== Dependencies ==="
+# Use venv if available, else system python
+if [ -x "$REPO_ROOT/.venv/bin/python3" ]; then
+  PYTHON="$REPO_ROOT/.venv/bin/python3"
+else
+  PYTHON="python3"
+fi
+
 "$REPO_ROOT/bin/dependencies"
-
-echo ""
-echo "=== Lint ==="
 # Exclude test_tui.py — it's a manual interactive diagnostic tool, not automated tests
-"$REPO_ROOT/.venv/bin/ruff" check . --exclude test_tui.py
-
-echo ""
-echo "=== Tests ==="
-"$REPO_ROOT/.venv/bin/pytest" tests/ -n auto --cov --cov-report=term-missing --cov-fail-under=100
+"$PYTHON" -m ruff check . --exclude test_tui.py
+"$PYTHON" -m pytest tests/ -n auto --cov --cov-report=term-missing --cov-fail-under=100

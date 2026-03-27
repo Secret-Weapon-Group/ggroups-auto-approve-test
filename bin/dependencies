@@ -3,8 +3,6 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-echo "=== Dependencies ==="
-
 # Bootstrap venv if missing
 if [ ! -d "$REPO_ROOT/.venv" ]; then
     echo "Creating virtual environment..."
@@ -24,4 +22,3 @@ if [ ! -f "$PLAYWRIGHT_MARKER" ]; then
     touch "$PLAYWRIGHT_MARKER"
 fi
 
-echo "Dependencies up to date."

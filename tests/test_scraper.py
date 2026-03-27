@@ -52,10 +52,10 @@ class TestGoogleGroupsScraper:
     @pytest.mark.asyncio
     async def test_start(self):
         scraper = GoogleGroupsScraper()
-        mock_pw = AsyncMock()
-        mock_context = AsyncMock()
-        mock_page = AsyncMock()
+        mock_page = MagicMock()
+        mock_context = MagicMock()
         mock_context.pages = [mock_page]
+        mock_pw = MagicMock()
         mock_pw.chromium.launch_persistent_context = AsyncMock(return_value=mock_context)
 
         with patch("scraper.async_playwright") as mock_apw:
@@ -665,10 +665,10 @@ class TestGoogleGroupsScraper:
         scraper._page = AsyncMock()
         scraper.debug = False
 
-        # Role-based fails
-        ok_locator = AsyncMock()
-        ok_locator.count.return_value = 0
-        scraper._page.get_by_role.return_value = ok_locator
+        # Role-based fails — get_by_role is synchronous in Playwright
+        ok_locator = MagicMock()
+        ok_locator.count = AsyncMock(return_value=0)
+        scraper._page.get_by_role = MagicMock(return_value=ok_locator)
 
         # CSS selector succeeds
         mock_elem = AsyncMock()
@@ -683,8 +683,8 @@ class TestGoogleGroupsScraper:
         scraper._page = AsyncMock()
         scraper.debug = False
 
-        # Role-based fails
-        scraper._page.get_by_role.side_effect = Exception("no role")
+        # Role-based fails — get_by_role is synchronous in Playwright
+        scraper._page.get_by_role = MagicMock(side_effect=Exception("no role"))
         # CSS selectors fail
         scraper._page.wait_for_selector.side_effect = Exception("no selector")
         # JS succeeds
@@ -699,7 +699,8 @@ class TestGoogleGroupsScraper:
         scraper._page = AsyncMock()
         scraper.debug = False
 
-        scraper._page.get_by_role.side_effect = Exception("no role")
+        # get_by_role is synchronous in Playwright
+        scraper._page.get_by_role = MagicMock(side_effect=Exception("no role"))
         scraper._page.wait_for_selector.side_effect = Exception("no selector")
         scraper._page.evaluate.return_value = None
 
@@ -713,7 +714,8 @@ class TestGoogleGroupsScraper:
         scraper._page = AsyncMock()
         scraper.debug = False
 
-        scraper._page.get_by_role.side_effect = Exception("no role")
+        # get_by_role is synchronous in Playwright
+        scraper._page.get_by_role = MagicMock(side_effect=Exception("no role"))
         scraper._page.wait_for_selector.side_effect = Exception("no selector")
         scraper._page.evaluate.side_effect = Exception("JS error")
 
@@ -725,7 +727,7 @@ class TestGoogleGroupsScraper:
     async def test_dump_row_elements_no_debug(self):
         scraper = GoogleGroupsScraper(debug=False)
         scraper._page = AsyncMock()
-        await scraper._dump_row_elements(AsyncMock(), "0")
+        await scraper._dump_row_elements(MagicMock(), "0")
         scraper._page.evaluate.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -782,7 +784,8 @@ class TestGoogleGroupsScraper:
         scraper._page = AsyncMock()
         scraper.debug = False
 
-        scraper._page.get_by_role.side_effect = Exception("no match")
+        # get_by_role is synchronous in Playwright
+        scraper._page.get_by_role = MagicMock(side_effect=Exception("no match"))
         mock_elem = AsyncMock()
         scraper._page.wait_for_selector.return_value = mock_elem
 

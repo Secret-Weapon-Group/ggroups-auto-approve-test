@@ -2,7 +2,7 @@
 
 import asyncio
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from scraper import PendingMessage
 
@@ -226,6 +226,7 @@ class TestMainFlow:
         msgs = [_make_msg()]
 
         with patch("main.asyncio") as mock_asyncio, \
+             patch("main.fetch_and_analyze"), \
              patch("main.run_tui", return_value=msgs) as mock_tui, \
              patch("main.GoogleGroupsScraper"), \
              patch("builtins.print"):
@@ -244,18 +245,19 @@ class TestMainFlow:
         with patch("main.run_tui", return_value=msgs), \
              patch("main.GoogleGroupsScraper") as MockScraper, \
              patch("main.approve_messages", new_callable=AsyncMock) as mock_approve, \
+             patch("main.fetch_and_analyze"), \
              patch("builtins.print"):
 
-            mock_instance = AsyncMock()
-            mock_instance.ensure_logged_in.return_value = True
+            mock_instance = MagicMock()
+            mock_instance.start = AsyncMock()
+            mock_instance.stop = AsyncMock()
+            mock_instance.ensure_logged_in = AsyncMock(return_value=True)
             MockScraper.return_value = mock_instance
 
-            # Use real asyncio.run for fetch_and_analyze, capture do_approve
             captured_coro = []
             original_run = asyncio.run
 
             def capture_run(coro):
-                # First call is fetch_and_analyze, second is do_approve
                 if not captured_coro:
                     captured_coro.append(True)
                     return msgs
@@ -273,10 +275,13 @@ class TestMainFlow:
 
         with patch("main.run_tui", return_value=msgs), \
              patch("main.GoogleGroupsScraper") as MockScraper, \
+             patch("main.fetch_and_analyze"), \
              patch("builtins.print"):
 
-            mock_instance = AsyncMock()
-            mock_instance.ensure_logged_in.return_value = False
+            mock_instance = MagicMock()
+            mock_instance.start = AsyncMock()
+            mock_instance.stop = AsyncMock()
+            mock_instance.ensure_logged_in = AsyncMock(return_value=False)
             MockScraper.return_value = mock_instance
 
             captured_coro = []
@@ -295,6 +300,7 @@ class TestMainFlow:
 
     def test_no_messages(self):
         with patch("main.asyncio") as mock_asyncio, \
+             patch("main.fetch_and_analyze"), \
              patch("builtins.print"):
             mock_asyncio.run.return_value = []
 
@@ -306,6 +312,7 @@ class TestMainFlow:
         msgs = [_make_msg()]
 
         with patch("main.asyncio") as mock_asyncio, \
+             patch("main.fetch_and_analyze"), \
              patch("main.run_tui", return_value=None), \
              patch("builtins.print"):
             mock_asyncio.run.return_value = msgs
@@ -329,8 +336,10 @@ class TestAutoApproveFlow:
              patch("main.GoogleGroupsScraper") as MockScraper, \
              patch("main.approve_messages", new_callable=AsyncMock) as mock_approve, \
              patch("builtins.print"):
-            mock_instance = AsyncMock()
-            mock_instance.ensure_logged_in.return_value = True
+            mock_instance = MagicMock()
+            mock_instance.start = AsyncMock()
+            mock_instance.stop = AsyncMock()
+            mock_instance.ensure_logged_in = AsyncMock(return_value=True)
             MockScraper.return_value = mock_instance
 
             from main import auto_approve_flow
@@ -360,8 +369,10 @@ class TestAutoApproveFlow:
         with patch("main.fetch_and_analyze", new_callable=AsyncMock, return_value=[ok_msg]), \
              patch("main.GoogleGroupsScraper") as MockScraper, \
              patch("builtins.print"):
-            mock_instance = AsyncMock()
-            mock_instance.ensure_logged_in.return_value = False
+            mock_instance = MagicMock()
+            mock_instance.start = AsyncMock()
+            mock_instance.stop = AsyncMock()
+            mock_instance.ensure_logged_in = AsyncMock(return_value=False)
             MockScraper.return_value = mock_instance
 
             from main import auto_approve_flow
@@ -374,6 +385,7 @@ class TestMain:
     def test_login_dispatch(self):
         with patch("sys.argv", ["main.py", "--login"]), \
              patch("main.asyncio") as mock_asyncio, \
+             patch("main.do_login"), \
              patch("builtins.print"):
             from main import main
             main()
@@ -382,6 +394,7 @@ class TestMain:
     def test_auto_approve_dispatch(self):
         with patch("sys.argv", ["main.py", "--auto-approve"]), \
              patch("main.asyncio") as mock_asyncio, \
+             patch("main.auto_approve_flow"), \
              patch("builtins.print"):
             from main import main
             main()

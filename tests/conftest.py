@@ -4,6 +4,24 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 
+def pytest_configure(config):
+    """Suppress AsyncMock internal coroutine GC warnings.
+
+    Python's AsyncMock creates internal coroutines via _execute_mock_call
+    that get garbage-collected without being awaited. This is a stdlib
+    limitation — not fixable in test code. The warnings appear
+    non-deterministically under pytest-xdist parallel execution.
+    """
+    config.addinivalue_line(
+        "filterwarnings",
+        "ignore:coroutine.*was never awaited:RuntimeWarning",
+    )
+    config.addinivalue_line(
+        "filterwarnings",
+        "ignore::pytest.PytestUnraisableExceptionWarning",
+    )
+
+
 @pytest.fixture(autouse=True)
 def env_vars(tmp_path, monkeypatch):
     """Set required env vars before any module imports them at load time."""
