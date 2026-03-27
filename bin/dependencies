@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+echo "=== Dependencies ==="
+
+# Bootstrap venv if missing
+if [ ! -d "$REPO_ROOT/.venv" ]; then
+    echo "Creating virtual environment..."
+    python3 -m venv "$REPO_ROOT/.venv"
+fi
+
+# Upgrade pip
+"$REPO_ROOT/.venv/bin/pip" install --upgrade pip -q
+
+# Install all dependencies
+"$REPO_ROOT/.venv/bin/pip" install -r "$REPO_ROOT/requirements.txt" -q
+
+# Install Playwright chromium (skip if already installed)
+PLAYWRIGHT_MARKER="$REPO_ROOT/.venv/.playwright_installed"
+if [ ! -f "$PLAYWRIGHT_MARKER" ]; then
+    "$REPO_ROOT/.venv/bin/playwright" install chromium
+    touch "$PLAYWRIGHT_MARKER"
+fi
+
+echo "Dependencies up to date."

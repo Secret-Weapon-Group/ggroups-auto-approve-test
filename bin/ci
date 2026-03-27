@@ -8,6 +8,7 @@ echo "=== Dependencies ==="
 
 echo ""
 echo "=== Lint ==="
+# Exclude test_tui.py — it's a manual interactive diagnostic tool, not automated tests
 "$REPO_ROOT/.venv/bin/ruff" check . --exclude test_tui.py
 
 echo ""
