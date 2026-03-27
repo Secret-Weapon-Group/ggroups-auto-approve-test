@@ -83,8 +83,6 @@ Key modules:
 - Always read module imports before modifying any module.
 - Always check `conftest.py` for existing fixtures before creating new ones.
 - Never add lint exclusions — fix the code, not the linter configuration.
-- After creating new files, verify they appear in `git status`. If missing, check `.git/info/exclude` and `.gitignore` for rules hiding them.
-- Always run `bin/ci` and verify clean output before asking the user to check. Never ask the user to verify what you can verify yourself.
 
 ## Dependency Management
 
