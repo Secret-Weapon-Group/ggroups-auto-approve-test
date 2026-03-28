@@ -4,17 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Google Groups pending message moderator. Scrapes pending messages from a Google Groups group via Playwright, classifies them with Claude API (approve/hold), and presents a Textual TUI for human review before approving.
+Google Groups pending message moderator. Reads moderation notification emails via IMAP, classifies them with Claude API (approve/hold), presents a Textual TUI for human review, and approves by replying via SMTP.
 
 ## Commands
 
 ```bash
 # Install dependencies
 pip install -r requirements.txt
-playwright install chromium
-
-# First-time login (opens visible browser for Google OAuth)
-python main.py --login
 
 # Normal run: fetch -> AI classify -> TUI -> approve
 python main.py
@@ -22,32 +18,31 @@ python main.py
 # Auto-approve without TUI
 python main.py --auto-approve
 
-# Debug mode (screenshots saved to debug/)
+# Debug mode
 python main.py --debug
 
 # Manual TUI diagnostics (not automated tests — each test is interactive)
-python test_tui.py [1-8]
+python test_tui.py [1-6]
 ```
 
 ## Configuration
 
 Copy `.env.example` to `.env` and fill in:
-- `GOOGLE_EMAIL` / `GOOGLE_PASSWORD` — Google account
+- `GOOGLE_EMAIL` / `GOOGLE_PASSWORD` — Google account (use app-specific password if 2FA enabled)
 - `ANTHROPIC_API_KEY` — Claude API key
-- `GROUP_URL` — Google Groups URL to moderate
-
-Browser session is persisted in `.browser_profile/` (gitignored).
+- `GROUP_EMAIL` — Google Groups email address (e.g., `forecast-chat@googlegroups.com`)
+- `IMAP_HOST` / `SMTP_HOST` / `SMTP_PORT` — email server settings (defaults to Gmail)
 
 ## Architecture
 
-Three-phase flow in `main.py` using separate `asyncio.run()` calls (Textual and Playwright each need their own event loop):
+Three-phase flow in `main.py` using separate `asyncio.run()` calls (Textual needs its own event loop):
 
-1. **Fetch + Analyze** (`fetch_and_analyze`) — starts Playwright, scrapes pending messages, fetches bodies by click-expand on each row, runs concurrent Claude API classification, stops browser
+1. **Fetch + Analyze** (`fetch_and_analyze`) — connects to IMAP, searches for unread moderation emails, parses them into PendingMessage objects, runs concurrent Claude API classification, disconnects
 2. **TUI** (`run_tui`) — Textual app for reviewing messages, toggling hold/ok, previewing full bodies
-3. **Approve** — fresh Playwright session clicks approve buttons and confirms dialogs
+3. **Approve** — fresh IMAP/SMTP connection, replies "Approve" to each approved message's Reply-To address, marks originals as read
 
 Key modules:
-- `scraper.py` — `GoogleGroupsScraper` (Playwright automation), `PendingMessage` dataclass. Selector probing with caching for Google Groups' dynamic DOM.
+- `mail_monitor.py` — `MailMonitor` (IMAP/SMTP automation), `PendingMessage` dataclass. Reads moderation emails, parses sender/subject/body, sends approval replies.
 - `analyzer.py` — `analyze_all` runs classification + summarization concurrently. `trim_for_analysis` strips email headers, signatures, and bottom-quoted replies while preserving inline replies.
 - `tui.py` — `ModeratorApp` (main table), `PreviewScreen` (modal message view), `ConfirmApproveScreen`. Keybindings: h=toggle hold, a=approve all OK, p=preview, q=quit.
 - `config.py` — loads `.env` via python-dotenv, exposes constants.
