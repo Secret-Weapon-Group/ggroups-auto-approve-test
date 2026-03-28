@@ -5,6 +5,8 @@ import logging
 import re
 from dataclasses import dataclass
 
+import aioimaplib
+
 log = logging.getLogger("mail_monitor")
 
 
@@ -44,6 +46,58 @@ _MESSAGE_BODY_RE = re.compile(
 
 class MailMonitor:
     """Monitors email for Google Groups moderation notifications."""
+
+    def __init__(self, *, imap_host: str, email_address: str, password: str,
+                 group_email: str, imap_port: int = 993):
+        self._imap_host = imap_host
+        self._imap_port = imap_port
+        self._email = email_address
+        self._password = password
+        self._group_email = group_email
+        self._imap = None
+
+    async def connect(self):
+        """Connect and authenticate to the IMAP server."""
+        self._imap = aioimaplib.IMAP4_SSL(host=self._imap_host, port=self._imap_port)
+        await self._imap.wait_hello_from_server()
+        result, _ = await self._imap.login(self._email, self._password)
+        if result != "OK":
+            raise ConnectionError("IMAP login failed")
+        await self._imap.select("INBOX")
+
+    async def disconnect(self):
+        """Logout from the IMAP server."""
+        if self._imap:
+            await self._imap.logout()
+            self._imap = None
+
+    async def fetch_pending(self) -> list[PendingMessage]:
+        """Fetch unread moderation emails and return as PendingMessage list."""
+        search_criteria = f'UNSEEN FROM "{self._group_email}" SUBJECT "Please approve"'
+        response = await self._imap.uid_search(search_criteria)
+
+        if response.result != "OK":
+            log.warning("IMAP search failed: %s", response.lines)
+            return []
+
+        uid_line = response.lines[0] if response.lines else b""
+        if isinstance(uid_line, bytes):
+            uid_line = uid_line.decode("utf-8", errors="replace")
+        uids = uid_line.split()
+        if not uids or uids == [""]:
+            return []
+
+        messages = []
+        for uid in uids:
+            resp = await self._imap.uid("fetch", uid, "(RFC822)")
+            if resp.result != "OK" or len(resp.lines) < 2:
+                log.warning("Failed to fetch UID %s", uid)
+                continue
+            raw_email = resp.lines[1]
+            msg = self._parse_moderation_email(raw_email, uid=uid)
+            messages.append(msg)
+
+        return messages
 
     @staticmethod
     def _parse_moderation_email(raw_email: bytes, *, uid: str = "") -> PendingMessage:

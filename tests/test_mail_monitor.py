@@ -1,6 +1,9 @@
 """Tests for mail_monitor.py — email-based Google Groups moderation."""
 
 from email.mime.text import MIMEText
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 SAMPLE_MODERATION_BODY = """\
@@ -152,3 +155,155 @@ class TestParseModerrationEmail:
         raw = _make_moderation_email(subject="Just a regular subject")
         msg = MailMonitor._parse_moderation_email(raw, uid="1")
         assert msg.subject == "Just a regular subject"
+
+
+def _mock_imap_client(search_uids=None, fetch_data=None):
+    """Build a mock aioimaplib IMAP4_SSL client.
+
+    Args:
+        search_uids: list of UID strings the search returns, e.g. ["1", "2"]
+        fetch_data: dict mapping UID string -> raw email bytes
+    """
+    client = MagicMock()
+    client.wait_hello_from_server = AsyncMock()
+    client.login = AsyncMock(return_value=("OK", [b"LOGIN completed"]))
+    client.select = AsyncMock(return_value=("OK", [b"EXISTS 10"]))
+    client.logout = AsyncMock()
+
+    # Search response
+    uid_line = " ".join(search_uids) if search_uids else ""
+    search_resp = MagicMock()
+    search_resp.result = "OK"
+    search_resp.lines = [uid_line.encode()] if uid_line else [b""]
+    client.uid_search = AsyncMock(return_value=search_resp)
+
+    # Fetch responses — one per UID
+    if fetch_data:
+        async def fake_uid(command, uid_str, *args):
+            resp = MagicMock()
+            if command == "fetch":
+                raw = fetch_data.get(uid_str, b"")
+                resp.result = "OK"
+                resp.lines = [b"FETCH", raw, b")"]
+                return resp
+            if command == "store":
+                resp.result = "OK"
+                resp.lines = []
+                return resp
+            return resp
+        client.uid = AsyncMock(side_effect=fake_uid)
+    else:
+        resp = MagicMock()
+        resp.result = "OK"
+        resp.lines = []
+        client.uid = AsyncMock(return_value=resp)
+
+    return client
+
+
+class TestFetchPending:
+    """Test MailMonitor.fetch_pending() IMAP fetch logic."""
+
+    @pytest.mark.asyncio
+    async def test_fetches_and_parses_emails(self):
+        from mail_monitor import MailMonitor
+        raw = _make_moderation_email()
+        mock_client = _mock_imap_client(
+            search_uids=["101"],
+            fetch_data={"101": raw},
+        )
+
+        monitor = MailMonitor(
+            imap_host="imap.gmail.com",
+            email_address="mod@example.com",
+            password="secret",
+            group_email="forecast-chat@googlegroups.com",
+        )
+        monitor._imap = mock_client
+
+        messages = await monitor.fetch_pending()
+
+        assert len(messages) == 1
+        assert messages[0].sender == "alice@example.com"
+        assert messages[0].subject == "My forecast for Q3"
+        assert messages[0].message_uid == "101"
+
+    @pytest.mark.asyncio
+    async def test_empty_inbox_returns_empty_list(self):
+        from mail_monitor import MailMonitor
+        mock_client = _mock_imap_client(search_uids=[])
+
+        monitor = MailMonitor(
+            imap_host="imap.gmail.com",
+            email_address="mod@example.com",
+            password="secret",
+            group_email="forecast-chat@googlegroups.com",
+        )
+        monitor._imap = mock_client
+
+        messages = await monitor.fetch_pending()
+        assert messages == []
+
+    @pytest.mark.asyncio
+    async def test_multiple_emails_returned(self):
+        from mail_monitor import MailMonitor
+        raw1 = _make_moderation_email(message_id="<msg1@example.com>")
+        raw2 = _make_moderation_email(
+            message_id="<msg2@example.com>",
+            subject="[forecast-chat] Please approve or reject: Another post",
+        )
+        mock_client = _mock_imap_client(
+            search_uids=["10", "11"],
+            fetch_data={"10": raw1, "11": raw2},
+        )
+
+        monitor = MailMonitor(
+            imap_host="imap.gmail.com",
+            email_address="mod@example.com",
+            password="secret",
+            group_email="forecast-chat@googlegroups.com",
+        )
+        monitor._imap = mock_client
+
+        messages = await monitor.fetch_pending()
+        assert len(messages) == 2
+        assert messages[0].message_uid == "10"
+        assert messages[1].message_uid == "11"
+
+    @pytest.mark.asyncio
+    async def test_connect_and_disconnect(self):
+        from mail_monitor import MailMonitor
+        mock_client = _mock_imap_client()
+
+        with patch("mail_monitor.aioimaplib") as mock_lib:
+            mock_lib.IMAP4_SSL.return_value = mock_client
+            monitor = MailMonitor(
+                imap_host="imap.gmail.com",
+                email_address="mod@example.com",
+                password="secret",
+                group_email="group@googlegroups.com",
+            )
+            await monitor.connect()
+            mock_client.wait_hello_from_server.assert_awaited_once()
+            mock_client.login.assert_awaited_once_with("mod@example.com", "secret")
+            mock_client.select.assert_awaited_once_with("INBOX")
+
+            await monitor.disconnect()
+            mock_client.logout.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_connect_failure_raises(self):
+        from mail_monitor import MailMonitor
+        mock_client = _mock_imap_client()
+        mock_client.login = AsyncMock(return_value=("NO", [b"LOGIN failed"]))
+
+        with patch("mail_monitor.aioimaplib") as mock_lib:
+            mock_lib.IMAP4_SSL.return_value = mock_client
+            monitor = MailMonitor(
+                imap_host="imap.gmail.com",
+                email_address="mod@example.com",
+                password="bad",
+                group_email="group@googlegroups.com",
+            )
+            with pytest.raises(ConnectionError, match="IMAP login failed"):
+                await monitor.connect()
