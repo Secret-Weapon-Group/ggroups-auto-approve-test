@@ -94,7 +94,7 @@ class MailMonitor:
 
         messages = []
         for uid in uids:
-            resp = await self._imap.uid("fetch", uid, "(RFC822)")
+            resp = await self._imap.uid("fetch", uid, "(BODY.PEEK[])")
             if resp.result != "OK" or len(resp.lines) < 2:
                 log.warning("Failed to fetch UID %s", uid)
                 continue
