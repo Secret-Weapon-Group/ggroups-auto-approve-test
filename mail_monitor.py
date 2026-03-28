@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass
 
 import aioimaplib
+import aiosmtplib
+from email.mime.text import MIMEText
 
 log = logging.getLogger("mail_monitor")
 
@@ -48,9 +50,12 @@ class MailMonitor:
     """Monitors email for Google Groups moderation notifications."""
 
     def __init__(self, *, imap_host: str, email_address: str, password: str,
-                 group_email: str, imap_port: int = 993):
+                 group_email: str, imap_port: int = 993,
+                 smtp_host: str = "smtp.gmail.com", smtp_port: int = 587):
         self._imap_host = imap_host
         self._imap_port = imap_port
+        self._smtp_host = smtp_host
+        self._smtp_port = smtp_port
         self._email = email_address
         self._password = password
         self._group_email = group_email
@@ -98,6 +103,51 @@ class MailMonitor:
             messages.append(msg)
 
         return messages
+
+    async def approve_messages(self, messages: list[PendingMessage]) -> dict[str, bool]:
+        """Approve messages by replying to their moderation emails via SMTP.
+
+        Returns dict mapping message id -> success boolean.
+        """
+        if not messages:
+            return {}
+
+        results = {}
+        smtp = aiosmtplib.SMTP(hostname=self._smtp_host, port=self._smtp_port,
+                               use_tls=False, start_tls=True)
+        await smtp.connect()
+        await smtp.login(self._email, self._password)
+
+        try:
+            for msg in messages:
+                try:
+                    reply = MIMEText("Approve", "plain", "utf-8")
+                    reply["To"] = msg.reply_to
+                    reply["From"] = self._email
+                    reply["Subject"] = f"Re: {msg.subject}"
+                    reply["In-Reply-To"] = msg.id
+                    reply["References"] = msg.id
+
+                    await smtp.sendmail(
+                        self._email,
+                        [msg.reply_to],
+                        reply.as_string(),
+                    )
+
+                    # Mark original moderation email as read
+                    if self._imap and msg.message_uid:
+                        await self._imap.uid("store", msg.message_uid,
+                                             "+FLAGS", r"(\Seen)")
+
+                    results[msg.id] = True
+                    log.info("Approved: %s", msg.subject)
+                except Exception:
+                    log.exception("Failed to approve: %s", msg.subject)
+                    results[msg.id] = False
+        finally:
+            await smtp.quit()
+
+        return results
 
     @staticmethod
     def _parse_moderation_email(raw_email: bytes, *, uid: str = "") -> PendingMessage:

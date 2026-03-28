@@ -307,3 +307,156 @@ class TestFetchPending:
             )
             with pytest.raises(ConnectionError, match="IMAP login failed"):
                 await monitor.connect()
+
+
+class TestApproveMessages:
+    """Test MailMonitor.approve_messages() SMTP approval logic."""
+
+    def _make_pending(self, *, msg_id="<mod-1@example.com>", uid="100",
+                      reply_to="group+approve-1@googlegroups.com",
+                      subject="Test subject"):
+        from mail_monitor import PendingMessage
+        return PendingMessage(
+            id=msg_id, sender="alice@example.com", subject=subject,
+            snippet="snip", body="body", date="2026-03-15",
+            reply_to=reply_to, message_uid=uid,
+        )
+
+    @pytest.mark.asyncio
+    async def test_sends_approval_reply(self):
+        from mail_monitor import MailMonitor
+        msg = self._make_pending()
+        mock_client = _mock_imap_client()
+        mock_smtp = AsyncMock()
+        mock_smtp.sendmail = AsyncMock()
+
+        monitor = MailMonitor(
+            imap_host="imap.gmail.com",
+            email_address="mod@example.com",
+            password="secret",
+            group_email="group@googlegroups.com",
+            smtp_host="smtp.gmail.com",
+            smtp_port=587,
+        )
+        monitor._imap = mock_client
+
+        with patch("mail_monitor.aiosmtplib") as mock_lib:
+            mock_lib.SMTP.return_value = mock_smtp
+            results = await monitor.approve_messages([msg])
+
+        assert results[msg.id] is True
+        mock_smtp.sendmail.assert_awaited_once()
+        # Verify the reply was sent to the reply_to address
+        call_args = mock_smtp.sendmail.call_args
+        assert call_args[0][1] == [msg.reply_to]
+
+    @pytest.mark.asyncio
+    async def test_marks_email_as_read_after_approval(self):
+        from mail_monitor import MailMonitor
+        msg = self._make_pending()
+        mock_client = _mock_imap_client()
+        mock_smtp = AsyncMock()
+        mock_smtp.sendmail = AsyncMock()
+
+        monitor = MailMonitor(
+            imap_host="imap.gmail.com",
+            email_address="mod@example.com",
+            password="secret",
+            group_email="group@googlegroups.com",
+            smtp_host="smtp.gmail.com",
+            smtp_port=587,
+        )
+        monitor._imap = mock_client
+
+        with patch("mail_monitor.aiosmtplib") as mock_lib:
+            mock_lib.SMTP.return_value = mock_smtp
+            await monitor.approve_messages([msg])
+
+        # Verify IMAP store was called to mark as read
+        mock_client.uid.assert_awaited()
+        store_calls = [
+            c for c in mock_client.uid.call_args_list
+            if c[0][0] == "store"
+        ]
+        assert len(store_calls) == 1
+        assert store_calls[0][0][1] == "100"  # UID
+
+    @pytest.mark.asyncio
+    async def test_handles_smtp_failure_gracefully(self):
+        from mail_monitor import MailMonitor
+        msg = self._make_pending()
+        mock_client = _mock_imap_client()
+        mock_smtp = AsyncMock()
+        mock_smtp.sendmail = AsyncMock(side_effect=Exception("SMTP error"))
+
+        monitor = MailMonitor(
+            imap_host="imap.gmail.com",
+            email_address="mod@example.com",
+            password="secret",
+            group_email="group@googlegroups.com",
+            smtp_host="smtp.gmail.com",
+            smtp_port=587,
+        )
+        monitor._imap = mock_client
+
+        with patch("mail_monitor.aiosmtplib") as mock_lib:
+            mock_lib.SMTP.return_value = mock_smtp
+            results = await monitor.approve_messages([msg])
+
+        assert results[msg.id] is False
+
+    @pytest.mark.asyncio
+    async def test_partial_failure(self):
+        from mail_monitor import MailMonitor
+        msg1 = self._make_pending(msg_id="<m1>", uid="10",
+                                  reply_to="approve-1@g.com")
+        msg2 = self._make_pending(msg_id="<m2>", uid="11",
+                                  reply_to="approve-2@g.com")
+        mock_client = _mock_imap_client()
+        call_count = 0
+
+        async def sendmail_side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise Exception("SMTP error on second")
+
+        mock_smtp = AsyncMock()
+        mock_smtp.sendmail = AsyncMock(side_effect=sendmail_side_effect)
+
+        monitor = MailMonitor(
+            imap_host="imap.gmail.com",
+            email_address="mod@example.com",
+            password="secret",
+            group_email="group@googlegroups.com",
+            smtp_host="smtp.gmail.com",
+            smtp_port=587,
+        )
+        monitor._imap = mock_client
+
+        with patch("mail_monitor.aiosmtplib") as mock_lib:
+            mock_lib.SMTP.return_value = mock_smtp
+            results = await monitor.approve_messages([msg1, msg2])
+
+        assert results["<m1>"] is True
+        assert results["<m2>"] is False
+
+    @pytest.mark.asyncio
+    async def test_empty_list_returns_empty_dict(self):
+        from mail_monitor import MailMonitor
+        mock_client = _mock_imap_client()
+
+        monitor = MailMonitor(
+            imap_host="imap.gmail.com",
+            email_address="mod@example.com",
+            password="secret",
+            group_email="group@googlegroups.com",
+            smtp_host="smtp.gmail.com",
+            smtp_port=587,
+        )
+        monitor._imap = mock_client
+
+        with patch("mail_monitor.aiosmtplib"):
+            results = await monitor.approve_messages([])
+
+        assert results == {}
