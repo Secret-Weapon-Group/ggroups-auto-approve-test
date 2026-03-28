@@ -51,7 +51,12 @@
       "Bash(exec /Users/ben/.claude/plugins/marketplaces/flow-marketplace/bin/flow *)",
       "Bash(exec /Users/ben/.claude/plugins/marketplaces/flow-marketplace//bin/flow *)",
       "Bash(/Users/ben/.claude/plugins/marketplaces/flow-marketplace/bin/flow *)",
-      "Bash(/Users/ben/.claude/plugins/marketplaces/flow-marketplace//bin/flow *)"
+      "Bash(/Users/ben/.claude/plugins/marketplaces/flow-marketplace//bin/flow *)",
+      "Bash(chmod +x *)",
+      "Bash(gh -C *)",
+      "Bash(*bin/*)",
+      "Read(~/.claude/projects/**/tool-results/*)",
+      "Read(//tmp/*.md)"
     ],
     "deny": [
       "Bash(git rebase *)",
