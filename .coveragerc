@@ -5,6 +5,8 @@ source =
     analyzer
     tui
     config
+    classifier
+    checks
 
 [report]
 show_missing = True

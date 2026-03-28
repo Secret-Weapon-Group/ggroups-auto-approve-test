@@ -1,7 +1,7 @@
 """Tests for analyzer.py — message trimming, API calls, classification."""
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from scraper import PendingMessage
 
@@ -194,9 +194,9 @@ class TestApiCallWithRetry:
 
 class TestAnalyzeMessage:
     @pytest.mark.asyncio
-    async def test_json_parse_approve(self, sample_message, mock_anthropic):
-        mock_anthropic.messages.create.return_value.content[0].text = '{"decision": "approve", "reason": "Good post"}'
-        with patch("analyzer.client", mock_anthropic):
+    async def test_approve(self, sample_message):
+        mock_classify = AsyncMock(return_value={"decision": "approve", "reason": "Good post"})
+        with patch("analyzer.classifier.classify_message", mock_classify):
             from analyzer import analyze_message
             result = await analyze_message(sample_message)
             assert result.ai_recommendation == "approve"
@@ -204,34 +204,29 @@ class TestAnalyzeMessage:
             assert result.status == "ok"
 
     @pytest.mark.asyncio
-    async def test_json_parse_hold(self, sample_message, mock_anthropic):
-        mock_anthropic.messages.create.return_value.content[0].text = '{"decision": "hold", "reason": "Hostile tone"}'
-        with patch("analyzer.client", mock_anthropic):
+    async def test_hold(self, sample_message):
+        mock_classify = AsyncMock(return_value={"decision": "hold", "reason": "Hostile tone"})
+        with patch("analyzer.classifier.classify_message", mock_classify):
             from analyzer import analyze_message
             result = await analyze_message(sample_message)
             assert result.ai_recommendation == "hold"
             assert result.status == "hold"
 
     @pytest.mark.asyncio
-    async def test_fallback_parse_hold(self, sample_message, mock_anthropic):
-        mock_anthropic.messages.create.return_value.content[0].text = "I think we should HOLD this message"
-        with patch("analyzer.client", mock_anthropic):
+    async def test_classifier_receives_trimmed_body(self, sample_message):
+        mock_classify = AsyncMock(return_value={"decision": "approve", "reason": "ok"})
+        with patch("analyzer.classifier.classify_message", mock_classify):
             from analyzer import analyze_message
-            result = await analyze_message(sample_message)
-            assert result.ai_recommendation == "hold"
+            await analyze_message(sample_message)
+            mock_classify.assert_called_once()
+            call_kwargs = mock_classify.call_args.kwargs
+            assert call_kwargs["subject"] == sample_message.subject
+            assert call_kwargs["sender"] == sample_message.sender
 
     @pytest.mark.asyncio
-    async def test_fallback_parse_approve(self, sample_message, mock_anthropic):
-        mock_anthropic.messages.create.return_value.content[0].text = "This looks fine, approve it"
-        with patch("analyzer.client", mock_anthropic):
-            from analyzer import analyze_message
-            result = await analyze_message(sample_message)
-            assert result.ai_recommendation == "approve"
-
-    @pytest.mark.asyncio
-    async def test_recursion_error(self, sample_message, mock_anthropic):
-        mock_anthropic.messages.create.side_effect = RecursionError("too deep")
-        with patch("analyzer.client", mock_anthropic):
+    async def test_recursion_error(self, sample_message):
+        mock_classify = AsyncMock(side_effect=RecursionError("too deep"))
+        with patch("analyzer.classifier.classify_message", mock_classify):
             from analyzer import analyze_message
             result = await analyze_message(sample_message)
             assert result.ai_recommendation == "approve"
@@ -239,9 +234,9 @@ class TestAnalyzeMessage:
             assert result.status == "ok"
 
     @pytest.mark.asyncio
-    async def test_general_exception(self, sample_message, mock_anthropic):
-        mock_anthropic.messages.create.side_effect = RuntimeError("network error")
-        with patch("analyzer.client", mock_anthropic):
+    async def test_general_exception(self, sample_message):
+        mock_classify = AsyncMock(side_effect=RuntimeError("network error"))
+        with patch("analyzer.classifier.classify_message", mock_classify):
             from analyzer import analyze_message
             result = await analyze_message(sample_message)
             assert result.ai_recommendation == "approve"
@@ -249,31 +244,30 @@ class TestAnalyzeMessage:
             assert result.status == "ok"
 
     @pytest.mark.asyncio
-    async def test_uses_snippet_when_no_body(self, mock_anthropic):
+    async def test_uses_snippet_when_no_body(self):
         msg = PendingMessage(id="0", sender="a@b.com", subject="Test",
                              snippet="snippet text", body="", date="2026-01-01")
-        mock_anthropic.messages.create.return_value.content[0].text = '{"decision": "approve", "reason": "ok"}'
-        with patch("analyzer.client", mock_anthropic):
+        mock_classify = AsyncMock(return_value={"decision": "approve", "reason": "ok"})
+        with patch("analyzer.classifier.classify_message", mock_classify):
             from analyzer import analyze_message
             result = await analyze_message(msg)
             assert result.ai_recommendation == "approve"
+            assert mock_classify.call_args.kwargs["body"] == "snippet text"
 
     @pytest.mark.asyncio
-    async def test_truncates_long_body(self, sample_message, mock_anthropic):
+    async def test_truncates_long_body(self, sample_message):
         sample_message.body = "x" * 10000
-        mock_anthropic.messages.create.return_value.content[0].text = '{"decision": "approve", "reason": "ok"}'
-        with patch("analyzer.client", mock_anthropic):
+        mock_classify = AsyncMock(return_value={"decision": "approve", "reason": "ok"})
+        with patch("analyzer.classifier.classify_message", mock_classify):
             from analyzer import analyze_message
             await analyze_message(sample_message)
-            # Verify the API was called with truncated content
-            call_args = mock_anthropic.messages.create.call_args
-            user_content = call_args.kwargs["messages"][0]["content"]
-            assert "[... truncated]" in user_content
+            body_arg = mock_classify.call_args.kwargs["body"]
+            assert "[... truncated]" in body_arg
 
     @pytest.mark.asyncio
-    async def test_json_missing_fields_defaults(self, sample_message, mock_anthropic):
-        mock_anthropic.messages.create.return_value.content[0].text = '{}'
-        with patch("analyzer.client", mock_anthropic):
+    async def test_empty_reason_defaults(self, sample_message):
+        mock_classify = AsyncMock(return_value={"decision": "approve", "reason": ""})
+        with patch("analyzer.classifier.classify_message", mock_classify):
             from analyzer import analyze_message
             result = await analyze_message(sample_message)
             assert result.ai_recommendation == "approve"
@@ -339,7 +333,7 @@ class TestAnalyzeAll:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_concurrent_classification(self, mock_anthropic):
+    async def test_concurrent_classification(self):
         from analyzer import analyze_all
 
         msgs = [
@@ -347,30 +341,30 @@ class TestAnalyzeAll:
                            snippet=f"Snippet {i}", body=f"Body {i}", date="2026-01-01")
             for i in range(3)
         ]
-        mock_anthropic.messages.create.return_value.content[0].text = '{"decision": "approve", "reason": "ok"}'
+        mock_classify = AsyncMock(return_value={"decision": "approve", "reason": "ok"})
 
-        with patch("analyzer.client", mock_anthropic):
+        with patch("analyzer.classifier.classify_message", mock_classify):
             result = await analyze_all(msgs)
             assert len(result) == 3
             for msg in result:
                 assert msg.ai_recommendation == "approve"
 
     @pytest.mark.asyncio
-    async def test_progress_callback(self, mock_anthropic):
+    async def test_progress_callback(self):
         from analyzer import analyze_all
 
         msgs = [
             PendingMessage(id="0", sender="u@e.com", subject="Test",
                            snippet="Snippet", body="Body", date="2026-01-01")
         ]
-        mock_anthropic.messages.create.return_value.content[0].text = '{"decision": "approve", "reason": "ok"}'
+        mock_classify = AsyncMock(return_value={"decision": "approve", "reason": "ok"})
 
         progress_calls = []
 
         def on_progress(completed, total, phase, msg):
             progress_calls.append((completed, total, phase))
 
-        with patch("analyzer.client", mock_anthropic):
+        with patch("analyzer.classifier.classify_message", mock_classify):
             await analyze_all(msgs, on_progress=on_progress)
             assert len(progress_calls) >= 1
             assert progress_calls[0][2] == "classify"
@@ -386,22 +380,17 @@ class TestAnalyzeAll:
                            snippet="Snippet", body=long_body, date="2026-01-01")
         ]
 
-        async def mock_create(**kwargs):
-            resp = MagicMock()
-            if "system" in kwargs:
-                resp.content = [MagicMock(text='{"decision": "approve", "reason": "ok"}')]
-            else:
-                resp.content = [MagicMock(text="A summary.")]
-            return resp
+        mock_classify = AsyncMock(return_value={"decision": "approve", "reason": "ok"})
 
-        mock_anthropic.messages.create.side_effect = mock_create
+        mock_anthropic.messages.create.return_value.content[0].text = "A summary."
 
         progress_calls = []
 
         def on_progress(completed, total, phase, msg):
             progress_calls.append((completed, total, phase))
 
-        with patch("analyzer.client", mock_anthropic):
+        with patch("analyzer.classifier.classify_message", mock_classify), \
+             patch("analyzer.client", mock_anthropic):
             await analyze_all(msgs, on_progress=on_progress)
             phases = [p[2] for p in progress_calls]
             assert "summarize" in phases
@@ -416,20 +405,11 @@ class TestAnalyzeAll:
                            snippet="Snippet", body=long_body, date="2026-01-01")
         ]
 
-        call_count = 0
+        mock_classify = AsyncMock(return_value={"decision": "approve", "reason": "ok"})
 
-        async def mock_create(**kwargs):
-            nonlocal call_count
-            call_count += 1
-            resp = MagicMock()
-            if "system" in kwargs:
-                resp.content = [MagicMock(text='{"decision": "approve", "reason": "ok"}')]
-            else:
-                resp.content = [MagicMock(text="A summary.")]
-            return resp
+        mock_anthropic.messages.create.return_value.content[0].text = "A summary."
 
-        mock_anthropic.messages.create.side_effect = mock_create
-
-        with patch("analyzer.client", mock_anthropic):
+        with patch("analyzer.classifier.classify_message", mock_classify), \
+             patch("analyzer.client", mock_anthropic):
             result = await analyze_all(msgs)
             assert result[0].ai_summary == "A summary."
