@@ -4,7 +4,7 @@ import asyncio
 import pytest
 from unittest.mock import patch
 
-from scraper import PendingMessage
+from mail_monitor import PendingMessage
 from tui import ModeratorApp, PreviewScreen, run_tui
 
 

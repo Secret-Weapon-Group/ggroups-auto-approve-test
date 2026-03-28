@@ -11,7 +11,7 @@ from anthropic import AsyncAnthropic, APIStatusError
 sys.setrecursionlimit(max(sys.getrecursionlimit(), 5000))
 
 import config  # noqa: E402
-from scraper import PendingMessage  # noqa: E402
+from mail_monitor import PendingMessage  # noqa: E402
 import classifier  # noqa: E402
 
 log = logging.getLogger("analyzer")

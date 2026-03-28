@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from scraper import PendingMessage
+from mail_monitor import PendingMessage
 
 
 # ── trim_for_analysis ──────────────────────────────────────────

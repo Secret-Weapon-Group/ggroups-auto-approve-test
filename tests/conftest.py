@@ -36,7 +36,7 @@ def env_vars(tmp_path, monkeypatch):
 @pytest.fixture
 def sample_message():
     """A PendingMessage instance for testing."""
-    from scraper import PendingMessage
+    from mail_monitor import PendingMessage
     return PendingMessage(
         id="0",
         sender="alice@example.com",
@@ -54,7 +54,7 @@ def sample_message():
 @pytest.fixture
 def hold_message():
     """A PendingMessage marked as hold."""
-    from scraper import PendingMessage
+    from mail_monitor import PendingMessage
     return PendingMessage(
         id="1",
         sender="bob@example.com",

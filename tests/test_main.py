@@ -4,7 +4,7 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from scraper import PendingMessage
+from mail_monitor import PendingMessage
 
 
 def _make_msg(id="0", status="ok", ai_rec="approve"):
