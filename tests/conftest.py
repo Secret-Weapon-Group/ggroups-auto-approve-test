@@ -29,14 +29,12 @@ def env_vars(tmp_path, monkeypatch):
     monkeypatch.setenv("GOOGLE_EMAIL", "test@example.com")
     monkeypatch.setenv("GOOGLE_PASSWORD", "testpass")
     monkeypatch.setenv("GROUP_URL", "https://groups.google.com/g/test-group")
-    # Redirect BROWSER_PROFILE_DIR to tmp so config.py mkdir doesn't pollute
-    monkeypatch.setattr("config.BROWSER_PROFILE_DIR", tmp_path / ".browser_profile")
 
 
 @pytest.fixture
 def sample_message():
     """A PendingMessage instance for testing."""
-    from scraper import PendingMessage
+    from mail_monitor import PendingMessage
     return PendingMessage(
         id="0",
         sender="alice@example.com",
@@ -54,7 +52,7 @@ def sample_message():
 @pytest.fixture
 def hold_message():
     """A PendingMessage marked as hold."""
-    from scraper import PendingMessage
+    from mail_monitor import PendingMessage
     return PendingMessage(
         id="1",
         sender="bob@example.com",
@@ -80,16 +78,11 @@ def mock_anthropic():
 
 
 @pytest.fixture
-def mock_scraper():
-    """Mock GoogleGroupsScraper with all async methods."""
-    scraper = AsyncMock()
-    scraper.group_url = "https://groups.google.com/g/test-group"
-    scraper.headless = True
-    scraper.debug = False
-    scraper.start = AsyncMock()
-    scraper.stop = AsyncMock()
-    scraper.ensure_logged_in = AsyncMock(return_value=True)
-    scraper.fetch_pending_messages = AsyncMock(return_value=[])
-    scraper.fetch_all_message_bodies = AsyncMock()
-    scraper.approve_messages = AsyncMock(return_value={})
-    return scraper
+def mock_mail_monitor():
+    """Mock MailMonitor with all async methods."""
+    monitor = MagicMock()
+    monitor.connect = AsyncMock()
+    monitor.disconnect = AsyncMock()
+    monitor.fetch_pending = AsyncMock(return_value=[])
+    monitor.approve_messages = AsyncMock(return_value={})
+    return monitor

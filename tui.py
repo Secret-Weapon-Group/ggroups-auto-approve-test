@@ -13,7 +13,7 @@ from textual.widgets import (
 )
 from textual.css.query import NoMatches
 
-from scraper import PendingMessage
+from mail_monitor import PendingMessage
 
 
 class PreviewScreen(ModalScreen[None]):
