@@ -1,7 +1,8 @@
-playwright
 textual
 anthropic
 python-dotenv
+aioimaplib
+aiosmtplib
 ruff
 pytest
 pytest-asyncio
