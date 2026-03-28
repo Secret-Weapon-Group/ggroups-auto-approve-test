@@ -13,6 +13,7 @@ import logging
 import time
 
 import config
+from config import DEFAULT_FETCH_DAYS
 from mail_monitor import MailMonitor, PendingMessage
 from analyzer import analyze_all
 from tui import run_tui
@@ -37,7 +38,7 @@ def _make_monitor() -> MailMonitor:
     )
 
 
-async def fetch_and_analyze() -> list[PendingMessage]:
+async def fetch_and_analyze(*, days: int = DEFAULT_FETCH_DAYS) -> list[PendingMessage]:
     """Fetch pending moderation emails, run AI analysis, return messages."""
     t_total = time.time()
 
@@ -49,8 +50,8 @@ async def fetch_and_analyze() -> list[PendingMessage]:
 
     try:
         t0 = time.time()
-        print("Fetching pending moderation emails...")
-        messages = await monitor.fetch_pending()
+        print(f"Fetching pending moderation emails (last {days} days)...")
+        messages = await monitor.fetch_pending(days=days)
 
         if not messages:
             print(f"No pending messages found. ({_fmt_elapsed(time.time() - t0)})")
@@ -109,14 +110,14 @@ async def approve_messages(monitor: MailMonitor, messages: list[PendingMessage])
                 print(f"  FAILED: {subj}")
 
 
-def main_flow(debug: bool = False):
+def main_flow(debug: bool = False, days: int = DEFAULT_FETCH_DAYS):
     """Main flow: fetch -> analyze -> TUI -> approve.
 
     Split into separate asyncio.run() calls because Textual's app.run()
     manages its own event loop and can't be nested inside another.
     """
     # Phase 1: async fetch + analyze
-    messages = asyncio.run(fetch_and_analyze())
+    messages = asyncio.run(fetch_and_analyze(days=days))
     if not messages:
         return
 
@@ -138,9 +139,9 @@ def main_flow(debug: bool = False):
         print("No messages approved. Exiting.")
 
 
-async def auto_approve_flow():
+async def auto_approve_flow(*, days: int = DEFAULT_FETCH_DAYS):
     """Auto-approve all AI-approved messages without TUI."""
-    messages = await fetch_and_analyze()
+    messages = await fetch_and_analyze(days=days)
     if not messages:
         return
 
@@ -166,6 +167,8 @@ async def auto_approve_flow():
 def main():
     parser = argparse.ArgumentParser(description="Google Groups Pending Message Moderator")
     parser.add_argument("--auto-approve", action="store_true", help="Auto-approve AI-approved messages")
+    parser.add_argument("--days", type=int, default=DEFAULT_FETCH_DAYS,
+                        help=f"Only fetch emails from the last N days (default: {DEFAULT_FETCH_DAYS})")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
 
@@ -178,9 +181,9 @@ def main():
         print("Debug mode ON")
 
     if args.auto_approve:
-        asyncio.run(auto_approve_flow())
+        asyncio.run(auto_approve_flow(days=args.days))
     else:
-        main_flow(debug=args.debug)
+        main_flow(debug=args.debug, days=args.days)
 
 
 if __name__ == "__main__":

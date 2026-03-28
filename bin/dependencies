@@ -15,10 +15,3 @@ fi
 # Install all dependencies
 "$REPO_ROOT/.venv/bin/pip" install -r "$REPO_ROOT/requirements.txt" -q
 
-# Install Playwright chromium (skip if already installed)
-PLAYWRIGHT_MARKER="$REPO_ROOT/.venv/.playwright_installed"
-if [ ! -f "$PLAYWRIGHT_MARKER" ]; then
-    "$REPO_ROOT/.venv/bin/playwright" install chromium
-    touch "$PLAYWRIGHT_MARKER"
-fi
-

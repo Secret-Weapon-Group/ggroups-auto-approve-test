@@ -3,6 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from config import DEFAULT_FETCH_DAYS
 from mail_monitor import PendingMessage
 
 
@@ -321,7 +322,7 @@ class TestMain:
              patch("builtins.print"):
             from main import main
             main()
-            mock_flow.assert_called_once_with(debug=False)
+            mock_flow.assert_called_once_with(debug=False, days=DEFAULT_FETCH_DAYS)
 
     def test_debug_flag(self):
         with patch("sys.argv", ["main.py", "--debug"]), \
@@ -330,5 +331,5 @@ class TestMain:
              patch("builtins.print"):
             from main import main
             main()
-            mock_flow.assert_called_once_with(debug=True)
+            mock_flow.assert_called_once_with(debug=True, days=DEFAULT_FETCH_DAYS)
             mock_logging.basicConfig.assert_called_once()

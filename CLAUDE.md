@@ -22,7 +22,7 @@ python main.py --auto-approve
 python main.py --debug
 
 # Manual TUI diagnostics (not automated tests — each test is interactive)
-python test_tui.py [1-6]
+python test_tui.py [1-5]
 ```
 
 ## Configuration
