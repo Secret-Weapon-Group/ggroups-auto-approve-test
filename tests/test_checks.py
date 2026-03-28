@@ -45,7 +45,7 @@ class TestCheckNoSubstance:
         assert result["decision"] == "hold"
 
     def test_long_message_with_thanks_prefix(self):
-        body = "Thanks, but here's my detailed forecast about the upcoming election results based on polling data and historical trends"
+        body = "Thanks, but here's my detailed forecast about the upcoming election results based on recent polling data and established historical trends in the region"
         result = check_no_substance(body)
         assert result is None
 
@@ -63,6 +63,10 @@ class TestCheckNoSubstance:
         result = check_no_substance("   ")
         assert result is not None
         assert result["decision"] == "hold"
+
+    def test_short_non_reaction_message(self):
+        result = check_no_substance("What about the GDP forecast?")
+        assert result is None
 
     def test_reason_present(self):
         result = check_no_substance("+1")
@@ -136,6 +140,10 @@ class TestCheckSpam:
 
     def test_empty_body(self):
         result = check_spam("Subject", "")
+        assert result is None
+
+    def test_both_empty(self):
+        result = check_spam("", "")
         assert result is None
 
     def test_spam_in_subject(self):

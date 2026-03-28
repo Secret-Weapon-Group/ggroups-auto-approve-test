@@ -12,6 +12,7 @@ sys.setrecursionlimit(max(sys.getrecursionlimit(), 5000))
 
 import config  # noqa: E402
 from scraper import PendingMessage  # noqa: E402
+import classifier  # noqa: E402
 
 log = logging.getLogger("analyzer")
 
@@ -150,25 +151,6 @@ def _trim_for_analysis_impl(body: str) -> str:
     result = "\n".join(lines).strip()
     return result if result else body  # fall back to original if trimming removed everything
 
-SYSTEM_PROMPT = """\
-You are a Google Groups message moderator for a forecasting/predictions discussion group.
-
-Your job is to classify pending messages as either APPROVE or HOLD.
-
-99% of messages are fine. You should HOLD only messages that clearly violate these rules:
-
-1. **Angry or mean-spirited** — hostile tone, ranting, aggressive language
-2. **Personal attacks** — against anyone, including public figures (criticism of ideas is fine; attacking the person is not)
-3. **Racist, sexist, or discriminatory** — any bigotry or hate speech
-4. **No new information** — messages that are just "+1", "I agree", "This is wrong", "Thanks", simple agreement/disagreement without adding substance
-5. **Off-topic** — content that has nothing to do with the subject line or forecasting/predictions in general
-
-When in doubt, APPROVE. The group is about open discussion of forecasts and predictions.
-
-Respond with EXACTLY this JSON format (no markdown, no extra text):
-{"decision": "approve" or "hold", "reason": "brief 5-10 word reason"}
-"""
-
 SUMMARY_PROMPT = """\
 Summarize this message in 2-3 concise sentences. Focus on the key points and any predictions or forecasts mentioned.
 """
@@ -183,34 +165,12 @@ async def analyze_message(msg: PendingMessage) -> PendingMessage:
         if len(trimmed) > 8000:
             log.debug(f"Trimming body from {len(trimmed)} to 8000 chars for API")
             trimmed = trimmed[:8000] + "\n\n[... truncated]"
-        user_content = f"Subject: {msg.subject}\nFrom: {msg.sender}\n\nMessage body:\n{trimmed}"
 
-        response = await _api_call_with_retry(
-            model="claude-opus-4-0",
-            max_tokens=150,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_content}],
+        result = await classifier.classify_message(
+            subject=msg.subject, body=trimmed, sender=msg.sender
         )
-
-        result_text = response.content[0].text.strip()
-
-        # Parse JSON response
-        import json
-        try:
-            result = json.loads(result_text)
-            msg.ai_recommendation = result.get("decision", "approve")
-            msg.ai_reason = result.get("reason", "")
-        except json.JSONDecodeError:
-            # Fallback parsing
-            lower = result_text.lower()
-            if "hold" in lower:
-                msg.ai_recommendation = "hold"
-                msg.ai_reason = result_text[:80]
-            else:
-                msg.ai_recommendation = "approve"
-                msg.ai_reason = result_text[:80]
-
-        # Set initial status based on AI recommendation
+        msg.ai_recommendation = result["decision"]
+        msg.ai_reason = result["reason"]
         msg.status = "hold" if msg.ai_recommendation == "hold" else "ok"
 
     except RecursionError:
