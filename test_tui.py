@@ -62,27 +62,7 @@ elif test == "3":
     print(f"PASSED - result: {result}")
 
 elif test == "4":
-    print("Test 4: After real Playwright start/stop (no navigation)")
-    import asyncio
-    from playwright.async_api import async_playwright
-
-    async def pw_start_stop():
-        pw = await async_playwright().start()
-        browser = await pw.chromium.launch(headless=True)
-        page = await browser.new_page()
-        await page.goto("about:blank")
-        await browser.close()
-        await pw.stop()
-        print("  Playwright started and stopped OK")
-
-    asyncio.run(pw_start_stop())
-    print("  Launching TUI...")
-    from tui import run_tui
-    result = run_tui([msg])
-    print(f"PASSED - result: {result}")
-
-elif test == "5":
-    print("Test 5: After real mail monitor session")
+    print("Test 4: After real mail monitor session")
     import asyncio
     from main import fetch_and_analyze
 
@@ -94,8 +74,8 @@ elif test == "5":
     result = run_tui(messages)
     print(f"PASSED - result: {result}")
 
-elif test == "6":
-    print("Test 6: Full main_flow replica")
+elif test == "5":
+    print("Test 5: Full main_flow replica")
     import asyncio
     from main import fetch_and_analyze
     from analyzer import analyze_all
@@ -110,4 +90,4 @@ elif test == "6":
     print(f"PASSED - result: {result}")
 
 else:
-    print(f"Usage: python3 test_tui.py [1-8]")
+    print(f"Usage: python3 test_tui.py [1-5]")

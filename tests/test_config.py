@@ -56,6 +56,7 @@ def test_email_config_defaults(monkeypatch):
     monkeypatch.delenv("SMTP_HOST", raising=False)
     monkeypatch.delenv("SMTP_PORT", raising=False)
     monkeypatch.delenv("GROUP_EMAIL", raising=False)
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **kw: None)
 
     import config
     importlib.reload(config)

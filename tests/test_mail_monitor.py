@@ -1,5 +1,6 @@
 """Tests for mail_monitor.py — email-based Google Groups moderation."""
 
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -97,6 +98,12 @@ class TestParseModerrationEmail:
         msg = MailMonitor._parse_moderation_email(raw, uid="100")
         assert msg.subject == "My forecast for Q3"
 
+    def test_mod_subject_preserves_original(self):
+        from mail_monitor import MailMonitor
+        raw = _make_moderation_email()
+        msg = MailMonitor._parse_moderation_email(raw, uid="100")
+        assert msg.mod_subject == "[forecast-chat] Please approve or reject: My forecast for Q3"
+
     def test_extracts_sender_from_body(self):
         from mail_monitor import MailMonitor
         raw = _make_moderation_email()
@@ -136,7 +143,7 @@ class TestParseModerrationEmail:
         msg_obj["Message-ID"] = "<test@example.com>"
         raw = msg_obj.as_bytes()
         msg = MailMonitor._parse_moderation_email(raw, uid="1")
-        assert msg.reply_to == ""
+        assert msg.reply_to == "test@example.com"
 
     def test_malformed_email_missing_body(self):
         from mail_monitor import MailMonitor
@@ -155,6 +162,151 @@ class TestParseModerrationEmail:
         raw = _make_moderation_email(subject="Just a regular subject")
         msg = MailMonitor._parse_moderation_email(raw, uid="1")
         assert msg.subject == "Just a regular subject"
+
+
+def _make_multipart_moderation_email(
+    *,
+    inner_from="Alice <alice@example.com>",
+    inner_subject="My forecast for Q3",
+    inner_body="I think the probability of a recession is 30%.",
+    inner_date="Mon, 15 Mar 2026 10:30:00 -0700",
+    mod_from="group+msgappr@googlegroups.com",
+    reply_to="",
+    message_id="<mod-abc123@googlegroups.com>",
+    qp_encode=True,
+):
+    """Build a multipart moderation email with an attached message/rfc822."""
+    import quopri
+
+    outer = MIMEMultipart("mixed")
+    outer["From"] = mod_from
+    outer["Subject"] = "group - Google Groups: Message Pending [{abc123}]"
+    outer["Date"] = "Mon, 15 Mar 2026 11:00:00 -0700"
+    outer["Message-ID"] = message_id
+    if reply_to:
+        outer["Reply-To"] = reply_to
+
+    # Moderation notification part
+    notification = MIMEText(
+        "A message has been sent to the group and is awaiting approval.\n"
+        "You can approve this message by replying to this email.\n",
+        "plain", "utf-8",
+    )
+    outer.attach(notification)
+
+    # Build the inner message as raw bytes
+    inner = MIMEText(inner_body, "plain", "utf-8")
+    inner["From"] = inner_from
+    inner["Subject"] = inner_subject
+    inner["Date"] = inner_date
+    inner_bytes = inner.as_bytes()
+
+    # Attach as message/rfc822 with QP encoding (matches real Gmail format)
+    from email.mime.base import MIMEBase
+    attachment = MIMEBase("message", "rfc822")
+    if qp_encode:
+        attachment["Content-Transfer-Encoding"] = "quoted-printable"
+        attachment.set_payload(quopri.encodestring(inner_bytes).decode("ascii"))
+    else:
+        attachment.set_payload(inner_bytes.decode("ascii"))
+    outer.attach(attachment)
+
+    return outer.as_bytes()
+
+
+class TestExtractInnerMessage:
+    """Test _extract_inner_message extracts the attached original message."""
+
+    def test_extracts_from_qp_encoded_rfc822(self):
+        from mail_monitor import _extract_inner_message
+        raw = _make_multipart_moderation_email()
+        inner = _extract_inner_message(raw)
+        assert inner is not None
+        assert inner["From"] == "Alice <alice@example.com>"
+        assert inner["Subject"] == "My forecast for Q3"
+
+    def test_extracts_from_non_qp_rfc822(self):
+        from mail_monitor import _extract_inner_message
+        raw = _make_multipart_moderation_email(qp_encode=False)
+        inner = _extract_inner_message(raw)
+        assert inner is not None
+        assert inner["From"] == "Alice <alice@example.com>"
+
+    def test_returns_none_for_non_multipart(self):
+        from mail_monitor import _extract_inner_message
+        simple = MIMEText("Just a plain email", "plain", "utf-8")
+        assert _extract_inner_message(simple.as_bytes()) is None
+
+    def test_returns_none_when_no_rfc822_part(self):
+        from mail_monitor import _extract_inner_message
+        outer = MIMEMultipart("mixed")
+        outer.attach(MIMEText("Part 1", "plain", "utf-8"))
+        outer.attach(MIMEText("Part 2", "plain", "utf-8"))
+        assert _extract_inner_message(outer.as_bytes()) is None
+
+
+class TestGetPlainText:
+    """Test _get_plain_text extracts body from various email formats."""
+
+    def test_simple_message(self):
+        from mail_monitor import _get_plain_text
+        import email as email_lib
+        msg = email_lib.message_from_bytes(
+            MIMEText("Hello world", "plain", "utf-8").as_bytes()
+        )
+        assert _get_plain_text(msg) == "Hello world"
+
+    def test_multipart_message(self):
+        from mail_monitor import _get_plain_text
+        import email as email_lib
+        outer = MIMEMultipart("alternative")
+        outer.attach(MIMEText("Plain text body", "plain", "utf-8"))
+        outer.attach(MIMEText("<p>HTML body</p>", "html", "utf-8"))
+        msg = email_lib.message_from_bytes(outer.as_bytes())
+        assert _get_plain_text(msg) == "Plain text body"
+
+    def test_multipart_no_plain_text(self):
+        from mail_monitor import _get_plain_text
+        import email as email_lib
+        outer = MIMEMultipart("alternative")
+        outer.attach(MIMEText("<p>HTML only</p>", "html", "utf-8"))
+        msg = email_lib.message_from_bytes(outer.as_bytes())
+        assert _get_plain_text(msg) == ""
+
+    def test_empty_payload(self):
+        from mail_monitor import _get_plain_text
+        import email as email_lib
+        msg = email_lib.message_from_bytes(
+            MIMEText("", "plain", "utf-8").as_bytes()
+        )
+        assert _get_plain_text(msg) == ""
+
+
+class TestParseModerationEmailWithAttachment:
+    """Test _parse_moderation_email with multipart/rfc822 format."""
+
+    def test_extracts_inner_fields(self):
+        from mail_monitor import MailMonitor
+        raw = _make_multipart_moderation_email()
+        msg = MailMonitor._parse_moderation_email(raw, uid="200")
+        assert msg.sender == "Alice <alice@example.com>"
+        assert msg.subject == "My forecast for Q3"
+        assert "probability of a recession" in msg.body
+
+    def test_subject_is_inner_mod_subject_is_outer(self):
+        from mail_monitor import MailMonitor
+        raw = _make_multipart_moderation_email(
+            inner_subject="Q3 recession forecast",
+        )
+        msg = MailMonitor._parse_moderation_email(raw, uid="200")
+        assert msg.subject == "Q3 recession forecast"
+        assert msg.mod_subject == "group - Google Groups: Message Pending [{abc123}]"
+
+    def test_falls_back_to_from_when_no_reply_to(self):
+        from mail_monitor import MailMonitor
+        raw = _make_multipart_moderation_email()
+        msg = MailMonitor._parse_moderation_email(raw, uid="200")
+        assert msg.reply_to == "group+msgappr@googlegroups.com"
 
 
 def _mock_imap_client(search_uids=None, fetch_data=None):
@@ -269,6 +421,57 @@ class TestFetchPending:
         assert len(messages) == 2
         assert messages[0].message_uid == "10"
         assert messages[1].message_uid == "11"
+
+    @pytest.mark.asyncio
+    async def test_search_failure_returns_empty_list(self):
+        from mail_monitor import MailMonitor
+        mock_client = _mock_imap_client()
+        search_resp = MagicMock()
+        search_resp.result = "NO"
+        search_resp.lines = [b"Search failed"]
+        mock_client.uid_search = AsyncMock(return_value=search_resp)
+
+        monitor = MailMonitor(
+            imap_host="imap.gmail.com",
+            email_address="mod@example.com",
+            password="secret",
+            group_email="forecast-chat@googlegroups.com",
+        )
+        monitor._imap = mock_client
+
+        messages = await monitor.fetch_pending()
+        assert messages == []
+
+    @pytest.mark.asyncio
+    async def test_fetch_failure_skips_uid(self):
+        from mail_monitor import MailMonitor
+        raw = _make_moderation_email()
+        mock_client = _mock_imap_client(search_uids=["10", "11"])
+
+        async def fake_uid(command, uid_str, *args):
+            resp = MagicMock()
+            if command == "fetch" and uid_str == "10":
+                resp.result = "NO"
+                resp.lines = [b"Fetch failed"]
+                return resp
+            if command == "fetch" and uid_str == "11":
+                resp.result = "OK"
+                resp.lines = [b"FETCH", raw, b")"]
+                return resp
+            return resp
+        mock_client.uid = AsyncMock(side_effect=fake_uid)
+
+        monitor = MailMonitor(
+            imap_host="imap.gmail.com",
+            email_address="mod@example.com",
+            password="secret",
+            group_email="forecast-chat@googlegroups.com",
+        )
+        monitor._imap = mock_client
+
+        messages = await monitor.fetch_pending()
+        assert len(messages) == 1
+        assert messages[0].message_uid == "11"
 
     @pytest.mark.asyncio
     async def test_connect_and_disconnect(self):
