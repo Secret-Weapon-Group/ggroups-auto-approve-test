@@ -93,3 +93,14 @@ def mock_scraper():
     scraper.fetch_all_message_bodies = AsyncMock()
     scraper.approve_messages = AsyncMock(return_value={})
     return scraper
+
+
+@pytest.fixture
+def mock_mail_monitor():
+    """Mock MailMonitor with all async methods."""
+    monitor = MagicMock()
+    monitor.connect = AsyncMock()
+    monitor.disconnect = AsyncMock()
+    monitor.fetch_pending = AsyncMock(return_value=[])
+    monitor.approve_messages = AsyncMock(return_value={})
+    return monitor
