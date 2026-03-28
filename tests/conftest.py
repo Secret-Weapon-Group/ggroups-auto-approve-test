@@ -29,8 +29,6 @@ def env_vars(tmp_path, monkeypatch):
     monkeypatch.setenv("GOOGLE_EMAIL", "test@example.com")
     monkeypatch.setenv("GOOGLE_PASSWORD", "testpass")
     monkeypatch.setenv("GROUP_URL", "https://groups.google.com/g/test-group")
-    # Redirect BROWSER_PROFILE_DIR to tmp so config.py mkdir doesn't pollute
-    monkeypatch.setattr("config.BROWSER_PROFILE_DIR", tmp_path / ".browser_profile")
 
 
 @pytest.fixture
@@ -77,22 +75,6 @@ def mock_anthropic():
     mock_response.content = [MagicMock(text='{"decision": "approve", "reason": "On-topic"}')]
     mock_client.messages.create.return_value = mock_response
     return mock_client
-
-
-@pytest.fixture
-def mock_scraper():
-    """Mock GoogleGroupsScraper with all async methods."""
-    scraper = AsyncMock()
-    scraper.group_url = "https://groups.google.com/g/test-group"
-    scraper.headless = True
-    scraper.debug = False
-    scraper.start = AsyncMock()
-    scraper.stop = AsyncMock()
-    scraper.ensure_logged_in = AsyncMock(return_value=True)
-    scraper.fetch_pending_messages = AsyncMock(return_value=[])
-    scraper.fetch_all_message_bodies = AsyncMock()
-    scraper.approve_messages = AsyncMock(return_value={})
-    return scraper
 
 
 @pytest.fixture
