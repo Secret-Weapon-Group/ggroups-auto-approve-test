@@ -52,6 +52,7 @@ def test_empty_env_vars_default_to_empty_string(monkeypatch):
     monkeypatch.delenv("GOOGLE_EMAIL", raising=False)
     monkeypatch.delenv("GOOGLE_PASSWORD", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **kw: None)
 
     import config
     importlib.reload(config)
