@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from config import DEFAULT_FETCH_DAYS
+from config import DEFAULT_FETCH_DAYS, DEFAULT_MODEL
 from mail_monitor import PendingMessage
 
 
@@ -117,7 +117,7 @@ class TestFetchAndAnalyze:
         mock_monitor.disconnect = AsyncMock()
         mock_monitor.fetch_pending = AsyncMock(return_value=msgs)
 
-        async def mock_analyze(messages, on_progress=None):
+        async def mock_analyze(messages, on_progress=None, model=None):
             if on_progress:
                 on_progress(1, 1, "classify", messages[0])
                 on_progress(1, 1, "summarize", messages[0])
@@ -322,7 +322,8 @@ class TestMain:
              patch("builtins.print"):
             from main import main
             main()
-            mock_flow.assert_called_once_with(debug=False, days=DEFAULT_FETCH_DAYS)
+            mock_flow.assert_called_once_with(debug=False, days=DEFAULT_FETCH_DAYS,
+                                                 model=DEFAULT_MODEL)
 
     def test_debug_flag(self):
         with patch("sys.argv", ["main.py", "--debug"]), \
@@ -331,5 +332,15 @@ class TestMain:
              patch("builtins.print"):
             from main import main
             main()
-            mock_flow.assert_called_once_with(debug=True, days=DEFAULT_FETCH_DAYS)
+            mock_flow.assert_called_once_with(debug=True, days=DEFAULT_FETCH_DAYS,
+                                                 model=DEFAULT_MODEL)
             mock_logging.basicConfig.assert_called_once()
+
+    def test_model_flag(self):
+        with patch("sys.argv", ["main.py", "--model", "opus"]), \
+             patch("main.main_flow") as mock_flow, \
+             patch("builtins.print"):
+            from main import main
+            main()
+            mock_flow.assert_called_once_with(debug=False, days=DEFAULT_FETCH_DAYS,
+                                                 model="opus")

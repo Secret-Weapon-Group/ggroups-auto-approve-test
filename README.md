@@ -55,11 +55,15 @@ python main.py --auto-approve
 # Only fetch emails from the last 7 days (default: 2)
 python main.py --days 7
 
+# Choose Claude model for classification (default: haiku)
+python main.py --model sonnet
+python main.py --model opus
+
 # Enable debug logging
 python main.py --debug
 
 # Combine flags
-python main.py --auto-approve --days 5 --debug
+python main.py --auto-approve --days 5 --model sonnet --debug
 ```
 
 ## TUI Keybindings

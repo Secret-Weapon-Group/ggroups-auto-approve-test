@@ -67,6 +67,22 @@ def test_email_config_defaults(monkeypatch):
     assert config.GROUP_EMAIL == ""
 
 
+def test_model_map_and_default():
+    """MODEL_MAP contains expected keys and DEFAULT_MODEL is valid."""
+    from config import MODEL_MAP, DEFAULT_MODEL
+    assert DEFAULT_MODEL in MODEL_MAP
+    assert set(MODEL_MAP.keys()) == {"haiku", "sonnet", "opus"}
+    for model_id in MODEL_MAP.values():
+        assert model_id.startswith("claude-")
+
+
+def test_resolve_model():
+    """resolve_model maps short names to API model IDs."""
+    from config import resolve_model, MODEL_MAP
+    for name, expected_id in MODEL_MAP.items():
+        assert resolve_model(name) == expected_id
+
+
 def test_email_config_from_env(monkeypatch):
     """Email config vars can be set via environment."""
     monkeypatch.setenv("IMAP_HOST", "imap.custom.com")

@@ -13,7 +13,7 @@ import logging
 import time
 
 import config
-from config import DEFAULT_FETCH_DAYS
+from config import DEFAULT_FETCH_DAYS, DEFAULT_MODEL, MODEL_MAP
 from mail_monitor import MailMonitor, PendingMessage
 from analyzer import analyze_all
 from tui import run_tui
@@ -38,7 +38,7 @@ def _make_monitor() -> MailMonitor:
     )
 
 
-async def fetch_and_analyze(*, days: int = DEFAULT_FETCH_DAYS) -> list[PendingMessage]:
+async def fetch_and_analyze(*, days: int = DEFAULT_FETCH_DAYS, model: str = DEFAULT_MODEL) -> list[PendingMessage]:
     """Fetch pending moderation emails, run AI analysis, return messages."""
     t_total = time.time()
 
@@ -71,8 +71,8 @@ async def fetch_and_analyze(*, days: int = DEFAULT_FETCH_DAYS) -> list[PendingMe
                     result = f" -> {msg.ai_recommendation}"
                 print(f"  [{i}/{total}] {label}: {subj}{result}", flush=True)
 
-            print("Running AI analysis...")
-            await analyze_all(messages, on_progress=on_ai_progress)
+            print(f"Running AI analysis (model: {model})...")
+            await analyze_all(messages, on_progress=on_ai_progress, model=model)
             hold_count = sum(1 for m in messages if m.ai_recommendation == "hold")
             print(f"AI done: {len(messages) - hold_count} approve, {hold_count} hold ({_fmt_elapsed(time.time() - t0)})")
         else:
@@ -110,14 +110,14 @@ async def approve_messages(monitor: MailMonitor, messages: list[PendingMessage])
                 print(f"  FAILED: {subj}")
 
 
-def main_flow(debug: bool = False, days: int = DEFAULT_FETCH_DAYS):
+def main_flow(debug: bool = False, days: int = DEFAULT_FETCH_DAYS, model: str = DEFAULT_MODEL):
     """Main flow: fetch -> analyze -> TUI -> approve.
 
     Split into separate asyncio.run() calls because Textual's app.run()
     manages its own event loop and can't be nested inside another.
     """
     # Phase 1: async fetch + analyze
-    messages = asyncio.run(fetch_and_analyze(days=days))
+    messages = asyncio.run(fetch_and_analyze(days=days, model=model))
     if not messages:
         return
 
@@ -139,9 +139,9 @@ def main_flow(debug: bool = False, days: int = DEFAULT_FETCH_DAYS):
         print("No messages approved. Exiting.")
 
 
-async def auto_approve_flow(*, days: int = DEFAULT_FETCH_DAYS):
+async def auto_approve_flow(*, days: int = DEFAULT_FETCH_DAYS, model: str = DEFAULT_MODEL):
     """Auto-approve all AI-approved messages without TUI."""
-    messages = await fetch_and_analyze(days=days)
+    messages = await fetch_and_analyze(days=days, model=model)
     if not messages:
         return
 
@@ -169,6 +169,8 @@ def main():
     parser.add_argument("--auto-approve", action="store_true", help="Auto-approve AI-approved messages")
     parser.add_argument("--days", type=int, default=DEFAULT_FETCH_DAYS,
                         help=f"Only fetch emails from the last N days (default: {DEFAULT_FETCH_DAYS})")
+    parser.add_argument("--model", choices=MODEL_MAP.keys(), default=DEFAULT_MODEL,
+                        help=f"Claude model to use (default: {DEFAULT_MODEL})")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
 
@@ -181,9 +183,9 @@ def main():
         print("Debug mode ON")
 
     if args.auto_approve:
-        asyncio.run(auto_approve_flow(days=args.days))
+        asyncio.run(auto_approve_flow(days=args.days, model=args.model))
     else:
-        main_flow(debug=args.debug, days=args.days)
+        main_flow(debug=args.debug, days=args.days, model=args.model)
 
 
 if __name__ == "__main__":

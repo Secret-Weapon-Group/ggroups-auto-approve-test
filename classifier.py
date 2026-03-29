@@ -15,6 +15,7 @@ import os
 from anthropic import AsyncAnthropic, APIStatusError
 
 from checks import run_all_checks
+from config import DEFAULT_MODEL, resolve_model
 
 log = logging.getLogger("classifier")
 
@@ -47,6 +48,7 @@ async def classify_message(
     body: str,
     sender: str = "",
     api_key: str | None = None,
+    model: str = DEFAULT_MODEL,
 ) -> dict:
     """Classify a message as approve or hold.
 
@@ -71,7 +73,7 @@ async def classify_message(
 
         response = await _api_call_with_retry(
             client,
-            model="claude-opus-4-0",
+            model=resolve_model(model),
             max_tokens=150,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],

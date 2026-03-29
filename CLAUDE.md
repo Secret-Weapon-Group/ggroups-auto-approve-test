@@ -18,6 +18,9 @@ python main.py
 # Auto-approve without TUI
 python main.py --auto-approve
 
+# Choose model (haiku|sonnet|opus, default: haiku)
+python main.py --model sonnet
+
 # Debug mode
 python main.py --debug
 
