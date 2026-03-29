@@ -110,6 +110,7 @@ class MailMonitor:
         self._smtp_port = smtp_port
         self._email = email_address
         self._password = password
+        print(f'{self._email} = {self._password}')
         self._group_email = group_email
         self._imap = None
 
