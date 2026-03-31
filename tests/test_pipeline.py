@@ -5,7 +5,7 @@ Tests validate: (a) Layer 1 checks correctly pre-filter obvious cases,
 """
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from checks import run_all_checks
 from tests.email_corpus import CORPUS
@@ -62,12 +62,12 @@ class TestPromptConstruction:
     )
     async def test_prompt_includes_message_fields(self, case):
         """classify_message sends subject, sender, and body to the LLM."""
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.content = [
-            AsyncMock(text='{"decision": "approve", "reason": "On-topic forecast"}')
+            MagicMock(text='{"decision": "approve", "reason": "On-topic forecast"}')
         ]
 
-        mock_client = AsyncMock()
+        mock_client = MagicMock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
 
         with patch("classifier.AsyncAnthropic", return_value=mock_client):
