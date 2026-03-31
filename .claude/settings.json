@@ -56,7 +56,8 @@
       "Bash(gh -C *)",
       "Bash(*bin/*)",
       "Read(~/.claude/projects/**/tool-results/*)",
-      "Read(//tmp/*.md)"
+      "Read(//tmp/*.md)",
+      "Bash(rm tests/test_adversarial_*)"
     ],
     "deny": [
       "Bash(git rebase *)",
