@@ -4,6 +4,52 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
+# ── _strip_markdown_fences ───────────────────────────────────
+
+class TestStripMarkdownFences:
+    def test_clean_json_passthrough(self):
+        """Clean JSON string passes through unchanged."""
+        from classifier import _strip_markdown_fences
+
+        text = '{"decision":"approve","reason":"ok"}'
+        assert _strip_markdown_fences(text) == text
+
+    def test_fenced_with_json_tag(self):
+        """Strips ```json and ``` fences."""
+        from classifier import _strip_markdown_fences
+
+        text = '```json\n{"decision":"approve","reason":"ok"}\n```'
+        assert _strip_markdown_fences(text) == '{"decision":"approve","reason":"ok"}'
+
+    def test_fenced_without_tag(self):
+        """Strips bare ``` fences."""
+        from classifier import _strip_markdown_fences
+
+        text = '```\n{"decision":"hold","reason":"Off-topic"}\n```'
+        assert _strip_markdown_fences(text) == '{"decision":"hold","reason":"Off-topic"}'
+
+    def test_fenced_with_uppercase_json_tag(self):
+        """Strips ```JSON fences."""
+        from classifier import _strip_markdown_fences
+
+        text = '```JSON\n{"decision":"approve","reason":"ok"}\n```'
+        assert _strip_markdown_fences(text) == '{"decision":"approve","reason":"ok"}'
+
+    def test_whitespace_around_fences(self):
+        """Handles whitespace inside fences."""
+        from classifier import _strip_markdown_fences
+
+        text = '```json\n  {"decision":"approve","reason":"ok"}  \n```'
+        assert _strip_markdown_fences(text) == '  {"decision":"approve","reason":"ok"}  '
+
+    def test_non_json_passthrough(self):
+        """Non-JSON text passes through unchanged."""
+        from classifier import _strip_markdown_fences
+
+        text = "I think we should hold this"
+        assert _strip_markdown_fences(text) == text
+
+
 # ── classify_message ──────────────────────────────────────────
 
 class TestClassifyMessage:
@@ -218,6 +264,38 @@ class TestClassifyMessage:
             with patch("classifier.AsyncAnthropic"):
                 await classify_message("Subject", "Body", sender="alice@example.com")
                 mock_checks.assert_called_once_with("Subject", "Body", sender="alice@example.com")
+
+    @pytest.mark.asyncio
+    async def test_fenced_json_approve(self):
+        """API response wrapped in markdown fences is parsed correctly (approve)."""
+        from classifier import classify_message
+
+        mock_client = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text='```json\n{"decision": "approve", "reason": "On-topic"}\n```')]
+        mock_client.messages.create.return_value = mock_response
+
+        with patch("classifier.run_all_checks", return_value=None):
+            with patch("classifier.AsyncAnthropic", return_value=mock_client):
+                result = await classify_message("Forecast discussion", "I think 30%")
+                assert result["decision"] == "approve"
+                assert result["reason"] == "On-topic"
+
+    @pytest.mark.asyncio
+    async def test_fenced_json_hold(self):
+        """API response wrapped in markdown fences is parsed correctly (hold)."""
+        from classifier import classify_message
+
+        mock_client = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text='```json\n{"decision": "hold", "reason": "Off-topic"}\n```')]
+        mock_client.messages.create.return_value = mock_response
+
+        with patch("classifier.run_all_checks", return_value=None):
+            with patch("classifier.AsyncAnthropic", return_value=mock_client):
+                result = await classify_message("Re: forecast", "Today's xkcd")
+                assert result["decision"] == "hold"
+                assert result["reason"] == "Off-topic"
 
     @pytest.mark.asyncio
     async def test_fallback_parse_hold(self):
