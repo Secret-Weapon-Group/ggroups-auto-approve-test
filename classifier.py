@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 
 from anthropic import AsyncAnthropic, APIStatusError
 
@@ -41,6 +42,13 @@ When genuinely uncertain, APPROVE.
 Respond with EXACTLY this JSON format (no markdown, no extra text):
 {"decision": "approve" or "hold", "reason": "brief 5-10 word reason"}
 """
+
+
+def _strip_markdown_fences(text: str) -> str:
+    """Strip markdown code fences from API response text."""
+    text = re.sub(r"^```(?:json|JSON)?[ \t]*\n?", "", text)
+    text = re.sub(r"\n?```\s*$", "", text)
+    return text
 
 
 async def classify_message(
@@ -79,7 +87,7 @@ async def classify_message(
             messages=[{"role": "user", "content": user_content}],
         )
 
-        result_text = response.content[0].text.strip()
+        result_text = _strip_markdown_fences(response.content[0].text.strip())
 
         try:
             result = json.loads(result_text)
