@@ -360,10 +360,24 @@ class TestAutoApproveFlow:
     async def test_all_hold(self):
         hold_msg = _make_msg(ai_rec="hold")
 
+        mock_monitor = MagicMock()
+        mock_monitor.connect = AsyncMock()
+        mock_monitor.disconnect = AsyncMock()
+        mock_monitor.mark_seen = AsyncMock()
+
         with patch("main.fetch_and_analyze", new_callable=AsyncMock, return_value=[hold_msg]), \
+             patch("main.MailMonitor", return_value=mock_monitor), \
+             patch("main.config") as mock_config, \
              patch("builtins.print"):
+            mock_config.IMAP_HOST = "imap.gmail.com"
+            mock_config.SMTP_HOST = "smtp.gmail.com"
+            mock_config.SMTP_PORT = 587
+            mock_config.GOOGLE_EMAIL = "test@example.com"
+            mock_config.GOOGLE_PASSWORD = "secret"
+            mock_config.GROUP_EMAIL = "group@googlegroups.com"
             from main import auto_approve_flow
             await auto_approve_flow()
+            mock_monitor.mark_seen.assert_awaited_once_with([hold_msg])
 
     @pytest.mark.asyncio
     async def test_mark_seen_called_for_held_messages(self):

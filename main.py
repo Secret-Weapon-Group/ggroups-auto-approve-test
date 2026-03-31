@@ -154,17 +154,17 @@ async def auto_approve_flow(*, days: int = DEFAULT_FETCH_DAYS, model: str = DEFA
         for m in hold_messages:
             print(f"  - [{m.sender}] {m.subject}: {m.ai_reason}")
 
-    if ok_messages:
-        monitor = _make_monitor()
-        await monitor.connect()
-        try:
+    monitor = _make_monitor()
+    await monitor.connect()
+    try:
+        if ok_messages:
             await approve_messages(monitor, ok_messages)
-            if hold_messages:
-                await monitor.mark_seen(hold_messages)
-        finally:
-            await monitor.disconnect()
-    else:
-        print("No messages to approve.")
+        else:
+            print("No messages to approve.")
+        if hold_messages:
+            await monitor.mark_seen(hold_messages)
+    finally:
+        await monitor.disconnect()
 
 
 def main():
