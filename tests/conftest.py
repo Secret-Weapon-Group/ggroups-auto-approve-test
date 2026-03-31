@@ -77,29 +77,6 @@ def mock_anthropic():
     return mock_client
 
 
-def make_realistic_body(
-    *,
-    greeting="",
-    content="",
-    signature="",
-    bottom_quote="",
-):
-    """Compose an email body from parts for testing.
-
-    Each part is optional. Parts are joined with blank-line separators.
-    """
-    parts = []
-    if greeting:
-        parts.append(greeting)
-    if content:
-        parts.append(content)
-    if signature:
-        parts.append(f"-- \n{signature}")
-    if bottom_quote:
-        parts.append(bottom_quote)
-    return "\n\n".join(parts)
-
-
 @pytest.fixture
 def mock_mail_monitor():
     """Mock MailMonitor with all async methods."""
