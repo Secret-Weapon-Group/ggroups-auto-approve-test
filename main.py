@@ -124,19 +124,20 @@ def main_flow(debug: bool = False, days: int = DEFAULT_FETCH_DAYS, model: str = 
     # Phase 2: Synchronous TUI (runs its own event loop)
     to_approve = run_tui(messages)
 
-    # Phase 3: async approve (fresh monitor connection)
-    if to_approve:
-        async def do_approve():
-            monitor = _make_monitor()
-            await monitor.connect()
-            try:
+    # Phase 3: async approve + mark all as seen (fresh monitor connection)
+    async def do_post_tui():
+        monitor = _make_monitor()
+        await monitor.connect()
+        try:
+            if to_approve:
                 await approve_messages(monitor, to_approve)
-            finally:
-                await monitor.disconnect()
+            else:
+                print("No messages approved. Exiting.")
+            await monitor.mark_seen(messages)
+        finally:
+            await monitor.disconnect()
 
-        asyncio.run(do_approve())
-    else:
-        print("No messages approved. Exiting.")
+    asyncio.run(do_post_tui())
 
 
 async def auto_approve_flow(*, days: int = DEFAULT_FETCH_DAYS, model: str = DEFAULT_MODEL):
@@ -158,6 +159,8 @@ async def auto_approve_flow(*, days: int = DEFAULT_FETCH_DAYS, model: str = DEFA
         await monitor.connect()
         try:
             await approve_messages(monitor, ok_messages)
+            if hold_messages:
+                await monitor.mark_seen(hold_messages)
         finally:
             await monitor.disconnect()
     else:
