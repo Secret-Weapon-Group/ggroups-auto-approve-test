@@ -188,6 +188,163 @@ class TestRunAllChecks:
         assert result is None
 
 
+# ── boundary tests (Task 4) ──────────────────────────────────────
+
+class TestNoSubstanceBoundaries:
+    """Boundary tests for _WORD_THRESHOLD=20 and reaction pattern matching."""
+
+    def test_reaction_single_word_held(self):
+        """Single reaction word is held (1 word ≤20, matches pattern)."""
+        assert check_no_substance("Thanks")["decision"] == "hold"
+        assert check_no_substance("+1")["decision"] == "hold"
+        assert check_no_substance("Agreed")["decision"] == "hold"
+
+    def test_20_word_message_with_reaction_prefix_passes(self):
+        """20-word message starting with 'Thanks' passes — pattern requires full-string match."""
+        body = "Thanks " + " ".join(["word"] * 19)  # 20 words total
+        assert len(body.split()) == 20
+        result = check_no_substance(body)
+        assert result is None  # no full-string pattern match
+
+    def test_21_word_message_skips_pattern_check(self):
+        """21-word message skips pattern check entirely (>20 early return)."""
+        body = "Thanks " + " ".join(["word"] * 20)  # 21 words total
+        assert len(body.split()) == 21
+        result = check_no_substance(body)
+        assert result is None
+
+    def test_exactly_20_non_reaction_words_passes(self):
+        """20 non-reaction words: reaches pattern check, no match, passes."""
+        body = " ".join(["forecast"] * 20)
+        assert len(body.split()) == 20
+        result = check_no_substance(body)
+        assert result is None
+
+    def test_exactly_21_non_reaction_words_passes(self):
+        """21 non-reaction words: >20 early return, passes."""
+        body = " ".join(["forecast"] * 21)
+        assert len(body.split()) == 21
+        result = check_no_substance(body)
+        assert result is None
+
+    def test_emoji_only_passes(self):
+        """Emoji-only '👍' is not in the reaction patterns — passes through."""
+        result = check_no_substance("👍")
+        # 1 word ≤20, but "👍" doesn't match any reaction pattern
+        assert result is None
+
+    def test_reaction_with_trailing_whitespace(self):
+        """Reaction with trailing whitespace/newlines still matches after strip()."""
+        result = check_no_substance("  Thanks!  \n\n")
+        assert result is not None
+        assert result["decision"] == "hold"
+
+    def test_case_insensitive_thanks_uppercase(self):
+        """THANKS! matches case-insensitively (re.IGNORECASE)."""
+        result = check_no_substance("THANKS!")
+        assert result is not None
+        assert result["decision"] == "hold"
+
+    def test_case_insensitive_thanks_mixed(self):
+        """tHaNkS matches case-insensitively."""
+        result = check_no_substance("tHaNkS")
+        assert result is not None
+        assert result["decision"] == "hold"
+
+
+class TestUrlOnlyBoundaries:
+    """Boundary tests for _MAX_NON_URL_WORDS=5."""
+
+    def test_url_plus_exactly_5_non_url_words_held(self):
+        """URL + exactly 5 non-URL words → hold (5 ≤ 5)."""
+        body = "Here are five good words https://example.com/forecast"
+        # Remove URL, count remaining: "Here are five good words" = 5 words
+        result = check_url_only(body)
+        assert result is not None
+        assert result["decision"] == "hold"
+
+    def test_url_plus_exactly_6_non_url_words_passes(self):
+        """URL + exactly 6 non-URL words → pass (6 > 5)."""
+        body = "Here are now six good words https://example.com/forecast"
+        result = check_url_only(body)
+        assert result is None
+
+    def test_url_with_fragment_captured_fully(self):
+        """URL with fragment (#section) is captured by \\S+ regex."""
+        body = "See https://example.com/report#methodology"
+        result = check_url_only(body)
+        assert result is not None  # "See" = 1 non-URL word ≤ 5
+        assert result["decision"] == "hold"
+
+    def test_url_with_query_string_captured(self):
+        """URL with query params captured by \\S+ regex."""
+        body = "Look https://example.com/data?year=2026&metric=gdp"
+        result = check_url_only(body)
+        assert result is not None  # "Look" = 1 non-URL word ≤ 5
+        assert result["decision"] == "hold"
+
+    def test_multiple_urls_5_non_url_words_held(self):
+        """Multiple URLs with 5 non-URL words total → hold."""
+        result = check_url_only("Check these out now please https://a.com https://b.com")
+        # Non-URL: "Check these out now please" = 5 words ≤ 5
+        assert result is not None
+        assert result["decision"] == "hold"
+
+    def test_url_zero_non_url_words_held(self):
+        """Bare URL with zero non-URL words → hold."""
+        result = check_url_only("https://example.com/recession-forecast")
+        assert result is not None
+        assert result["decision"] == "hold"
+
+
+class TestSpamBoundaries:
+    """Edge cases for spam pattern matching."""
+
+    def test_spam_keyword_in_legitimate_context(self):
+        """'buy crypto' in legitimate analysis context — still caught (known false positive).
+
+        The spam regex matches 'buy crypto' regardless of surrounding context.
+        """
+        body = "I wouldn't buy crypto at this valuation given the macro headwinds"
+        result = check_spam("Market analysis", body)
+        assert result is not None
+        assert result["decision"] == "hold"
+
+    def test_multiple_spam_patterns_returns_first_match(self):
+        """Multiple spam patterns in one message — first pattern match returned."""
+        body = "Buy Bitcoin now and click here for guaranteed returns"
+        result = check_spam("Special offer", body)
+        assert result is not None
+        assert result["decision"] == "hold"
+        # The first matching pattern in _SPAM_PATTERNS order is returned
+        assert "Spam pattern" in result["reason"]
+
+    def test_spam_pattern_split_across_subject_and_body(self):
+        """Spam pattern spanning subject + body — caught because combined = subject + body."""
+        result = check_spam("Buy", "crypto now for amazing profits")
+        # combined = "Buy crypto now for amazing profits", matches "buy crypto"
+        assert result is not None
+        assert result["decision"] == "hold"
+
+    def test_partial_spam_keyword_not_matched(self):
+        """Partial keyword 'buying' doesn't match '\\bbuy\\s+crypto' — word boundary prevents it."""
+        body = "I've been buying cryptocurrency ETFs as a hedge against inflation"
+        result = check_spam("Portfolio update", body)
+        # "buying cryptocurrency" != "buy crypto|bitcoin|ethereum|nft"
+        # "buying" matches \bbuy but then needs \s+ and (bitcoin|crypto|...)
+        # "buying cryptocurrency" has "buying" not "buy" — but \b matches at word boundary
+        # Actually \bbuy\s+ would NOT match "buying" because "buying" != "buy" + whitespace
+        # The \b is before "buy", and "buying" starts with "buy" but continues with "ing"
+        # So the regex tries to match "buy\s+" but "buying" has no whitespace after "buy"
+        assert result is None
+
+    def test_spam_keyword_case_insensitive(self):
+        """Spam patterns are case-insensitive (re.IGNORECASE)."""
+        result = check_spam("GREAT DEAL", "BUY BITCOIN NOW!!!")
+        assert result is not None
+        assert result["decision"] == "hold"
+
+
 # ── corpus coverage enforcement ──────────────────────────────────
 
 class TestCorpusCoverage:
