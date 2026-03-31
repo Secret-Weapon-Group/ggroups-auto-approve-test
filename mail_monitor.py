@@ -208,6 +208,17 @@ class MailMonitor:
 
         return results
 
+    async def mark_seen(self, messages: list[PendingMessage]) -> None:
+        """Mark messages as \\Seen in IMAP without sending any email."""
+        for msg in messages:
+            if not msg.message_uid:
+                continue
+            try:
+                await self._imap.uid("store", msg.message_uid,
+                                     "+FLAGS", r"(\Seen)")
+            except Exception:
+                log.exception("Failed to mark as seen: %s", msg.subject)
+
     @staticmethod
     def _parse_moderation_email(raw_email: bytes, *, uid: str = "") -> PendingMessage:
         """Parse a raw moderation email into a PendingMessage."""
