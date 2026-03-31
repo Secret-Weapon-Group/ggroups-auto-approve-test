@@ -42,7 +42,9 @@ Three-phase flow in `main.py` using separate `asyncio.run()` calls (Textual need
 
 1. **Fetch + Analyze** (`fetch_and_analyze`) — connects to IMAP, searches for unread moderation emails, parses them into PendingMessage objects, runs concurrent Claude API classification, disconnects
 2. **TUI** (`run_tui`) — Textual app for reviewing messages, toggling hold/ok, previewing full bodies
-3. **Approve** — fresh IMAP/SMTP connection, replies "Approve" to each approved message's Reply-To address, marks originals as read
+3. **Approve + Mark Seen** — fresh IMAP/SMTP connection, replies "Approve" to each approved message's Reply-To address, marks all fetched messages as `\Seen` so they don't reappear
+
+IMAP `\Seen` flag lifecycle: `approve_messages()` marks each approved message as `\Seen` as a side-effect of the SMTP reply. `mark_seen()` handles non-approved messages (held, quit, unactioned). Both flows (`main_flow` and `auto_approve_flow`) ensure every fetched message is marked `\Seen` before disconnecting, regardless of approval status.
 
 Key modules:
 - `mail_monitor.py` — `MailMonitor` (IMAP/SMTP automation), `PendingMessage` dataclass. Reads moderation emails, parses sender/subject/body, sends approval replies.
