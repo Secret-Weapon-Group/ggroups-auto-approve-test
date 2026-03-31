@@ -1,9 +1,10 @@
 """Tests for checks/ package — pattern-matching message classification."""
 
-from checks import run_all_checks
+from checks import run_all_checks, ALL_CHECKS
 from checks.no_substance import check_no_substance
 from checks.url_only import check_url_only
 from checks.spam import check_spam
+from tests.email_corpus import CORPUS
 
 
 # ── check_no_substance ─────��──────────────────────────────────
@@ -185,3 +186,13 @@ class TestRunAllChecks:
     def test_sender_parameter_accepted(self):
         result = run_all_checks("Subject", "Normal substantive message about forecasting trends", sender="user@example.com")
         assert result is None
+
+
+# ── corpus coverage enforcement ──────────────────────────────────
+
+class TestCorpusCoverage:
+    def test_every_check_has_corpus_entries(self):
+        """Every check module must have at least 2 corpus entries (1 catch, 1 pass-through)."""
+        for check_name in ALL_CHECKS:
+            tagged = [c for c in CORPUS if check_name in c.tags]
+            assert len(tagged) >= 2, f"checks/{check_name}.py needs at least 2 corpus entries in tests/email_corpus.py"
