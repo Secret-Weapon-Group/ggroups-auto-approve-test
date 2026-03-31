@@ -211,7 +211,7 @@ class MailMonitor:
     async def mark_seen(self, messages: list[PendingMessage]) -> None:
         """Mark messages as \\Seen in IMAP without sending any email."""
         for msg in messages:
-            if not msg.message_uid:
+            if not self._imap or not msg.message_uid:
                 continue
             try:
                 await self._imap.uid("store", msg.message_uid,
