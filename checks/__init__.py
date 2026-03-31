@@ -9,6 +9,8 @@ from checks.no_substance import check_no_substance
 from checks.url_only import check_url_only
 from checks.spam import check_spam
 
+ALL_CHECKS = ["no_substance", "url_only", "spam"]
+
 
 def run_all_checks(subject: str, body: str, sender: str = "") -> dict | None:
     """Run all checks in order and return the first hit, or None."""

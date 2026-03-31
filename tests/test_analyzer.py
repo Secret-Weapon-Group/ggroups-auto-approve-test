@@ -115,6 +115,181 @@ class TestTrimForAnalysis:
         assert "Inline reply here" in result
         assert "quoted line" in result
 
+    # ── realistic edge-case corpus (Task 2) ──────────────────────
+
+    def test_full_realistic_email(self):
+        """Headers + body + signature + bottom-quoted reply — strips all non-body content."""
+        from analyzer import trim_for_analysis
+        body = (
+            "From: alice@example.com\n"
+            "To: forecast-chat@googlegroups.com\n"
+            "Subject: Re: Q3 GDP forecast\n"
+            "Date: Mon, 15 Mar 2026 10:30:00 -0700\n"
+            "\n"
+            "I think the probability of recession in Q3 is around 25%.\n"
+            "Leading indicators from PMI and jobless claims both suggest\n"
+            "slowing growth, but consumer spending remains resilient.\n"
+            "\n"
+            "-- \n"
+            "Alice Johnson\n"
+            "Senior Economist, Acme Research\n"
+            "\n"
+            "On Sun, 14 Mar 2026, Bob <bob@example.com> wrote:\n"
+            "> What's everyone's take on Q3? The latest PMI numbers\n"
+            "> look concerning but I'm not sure they're predictive.\n"
+        )
+        result = trim_for_analysis(body)
+        assert "From:" not in result
+        assert "I think the probability" in result
+        assert "consumer spending remains resilient" in result
+        assert "Alice Johnson" not in result
+        assert "What's everyone's take" not in result
+
+    def test_multi_level_inline_reply_thread(self):
+        """Interleaved > and >> quotes with replies preserved as inline discussion."""
+        from analyzer import trim_for_analysis
+        body = (
+            "> Alice wrote: I think recession odds are 30%\n"
+            "I disagree — the labor market is too strong.\n"
+            "\n"
+            ">> Bob originally said: PMI is dropping fast\n"
+            "> Alice replied: But services PMI is stable\n"
+            "Both of you are ignoring the yield curve inversion.\n"
+        )
+        result = trim_for_analysis(body)
+        assert "I disagree" in result
+        assert "labor market is too strong" in result
+        assert "Both of you are ignoring" in result
+        assert "Alice wrote" in result
+
+    def test_forwarded_message_preserved(self):
+        """Forwarded message separator is not a header — body content preserved."""
+        from analyzer import trim_for_analysis
+        body = (
+            "FYI, relevant to our recession forecast discussion.\n"
+            "\n"
+            "---------- Forwarded message ----------\n"
+            "From: economist@reuters.com\n"
+            "Date: Fri, 12 Mar 2026\n"
+            "Subject: Q3 outlook report\n"
+            "\n"
+            "Our models show a 22% chance of recession by Q3.\n"
+        )
+        result = trim_for_analysis(body)
+        assert "FYI, relevant" in result
+        # Forwarded separator is preserved (not a recognized header)
+        assert "Forwarded message" in result
+        assert "22% chance of recession" in result
+
+    def test_very_long_email_signature_near_middle(self):
+        """Signature marker near the middle strips from that point (known limitation)."""
+        from analyzer import trim_for_analysis
+        top_lines = [f"Analysis point {i}: data looks stable." for i in range(1, 51)]
+        bottom_lines = [f"Additional note {i}: more supporting data." for i in range(1, 51)]
+        body = "\n".join(top_lines) + "\n\n-- \nDr. Smith\nChief Analyst\n\n" + "\n".join(bottom_lines)
+        result = trim_for_analysis(body)
+        assert "Analysis point 1" in result
+        assert "Analysis point 50" in result
+        # Everything after "-- " is treated as signature
+        assert "Dr. Smith" not in result
+        assert "Additional note 1" not in result
+
+    def test_double_dash_in_body_text(self):
+        """Bare '--' in body treated as signature marker (scans backward for last occurrence)."""
+        from analyzer import trim_for_analysis
+        body = (
+            "The range is 20--30% based on historical data.\n"
+            "\n"
+            "My final estimate: 25% probability.\n"
+        )
+        result = trim_for_analysis(body)
+        # No bare "-- " or "--" on its own line, so nothing stripped
+        assert "20--30%" in result
+        assert "My final estimate" in result
+
+    def test_bottom_quote_without_attribution(self):
+        """Bottom-quoted block without 'On ... wrote:' attribution is still trimmed."""
+        from analyzer import trim_for_analysis
+        body = (
+            "I agree with the 30% estimate.\n"
+            "\n"
+            "> The latest PMI data suggests a slowdown.\n"
+            "> Consumer confidence is also declining.\n"
+            "> I'd put recession odds at 30%.\n"
+        )
+        result = trim_for_analysis(body)
+        assert "I agree with the 30% estimate" in result
+        assert "PMI data" not in result
+
+    def test_multiple_bottom_quoted_sections(self):
+        """Reply-to-a-reply: nested quoting treated as single bottom-quote block."""
+        from analyzer import trim_for_analysis
+        body = (
+            "Good points from both of you.\n"
+            "\n"
+            "On Tue, 16 Mar 2026, Alice <alice@example.com> wrote:\n"
+            "> I'm revising my estimate to 28%.\n"
+            ">\n"
+            "> On Mon, 15 Mar 2026, Bob <bob@example.com> wrote:\n"
+            ">> The PMI numbers are really concerning.\n"
+            ">> I think 35% is more realistic.\n"
+        )
+        result = trim_for_analysis(body)
+        assert "Good points from both" in result
+        assert "revising my estimate" not in result
+        assert "PMI numbers" not in result
+
+    def test_encoding_artifacts_preserved(self):
+        """QP encoding artifacts in body text are preserved (not stripped by trimmer)."""
+        from analyzer import trim_for_analysis
+        body = (
+            "The probability is=20around 25% based on current data.\n"
+            "Temperature will be =3D 15=C2=B0C tomorrow.\n"
+            "Full analysis at https://example.com/report?q=3Dforecast\n"
+        )
+        result = trim_for_analysis(body)
+        assert "probability is=20around" in result
+        assert "=3D 15" in result
+        assert "q=3Dforecast" in result
+
+    def test_all_quoted_text_preserved(self):
+        """Body consisting entirely of quoted text is preserved (falls back to original)."""
+        from analyzer import trim_for_analysis
+        body = (
+            "> First quoted line about the forecast.\n"
+            "> Second quoted line with more data.\n"
+            "> Third quoted line concluding analysis.\n"
+        )
+        result = trim_for_analysis(body)
+        # Trimming would remove everything, so falls back to original
+        assert "First quoted line" in result
+        assert "Third quoted line" in result
+
+    def test_realistic_google_groups_moderation_email(self):
+        """Full Google Groups moderation notification format."""
+        from analyzer import trim_for_analysis
+        body = (
+            "From: noreply@googlegroups.com\n"
+            "Reply-To: forecast-chat+approve-abc123@googlegroups.com\n"
+            "X-Google-Group-Id: abc123\n"
+            "Content-Type: text/plain; charset=utf-8\n"
+            "\n"
+            "A message by alice@example.com requires your approval.\n"
+            "\n"
+            "From: alice@example.com\n"
+            "Subject: My Q3 recession forecast\n"
+            "\n"
+            "I've been tracking the Sahm Rule indicator and it just hit 0.43.\n"
+            "Combined with the inverted yield curve, I'm putting recession\n"
+            "probability at 35% for the next 12 months.\n"
+        )
+        result = trim_for_analysis(body)
+        # Outer headers stripped; inner "From:" also matches header pattern
+        assert "noreply@googlegroups.com" not in result
+        assert "X-Google-Group-Id" not in result
+        # The inner message content should be preserved
+        assert "Sahm Rule indicator" in result
+
 
 # ── _api_call_with_retry ───────────────────────────────────────
 

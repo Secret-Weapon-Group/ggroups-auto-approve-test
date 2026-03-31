@@ -665,6 +665,148 @@ class TestApproveMessages:
         assert results == {}
 
 
+# ── email parsing format variations (Task 3) ────────────────────
+
+class TestEmailParsingVariations:
+    """Test _parse_moderation_email and _extract_inner_message with varied MIME formats."""
+
+    def test_very_long_inner_body(self):
+        """Inner message body >8KB is extracted without truncation."""
+        from mail_monitor import MailMonitor
+        long_body = "This is a detailed forecast analysis. " * 300  # ~11KB
+        raw = _make_multipart_moderation_email(inner_body=long_body)
+        msg = MailMonitor._parse_moderation_email(raw, uid="300")
+        assert len(msg.body) > 8000
+        assert "detailed forecast analysis" in msg.body
+
+    def test_non_ascii_inner_subject(self):
+        """Inner message with MIME Q-encoded UTF-8 subject — stored as raw MIME encoding.
+
+        Python's compat32 email policy (default) doesn't auto-decode encoded headers,
+        so the subject retains its MIME Q-encoding. This documents the current behavior.
+        """
+        from mail_monitor import MailMonitor
+        from email.header import Header
+        encoded_subject = Header("Prévision économique Q3", "utf-8").encode()
+        raw = _make_multipart_moderation_email(inner_subject=encoded_subject)
+        msg = MailMonitor._parse_moderation_email(raw, uid="301")
+        # compat32 policy returns raw MIME-encoded header
+        assert "utf-8" in msg.subject
+        assert "Q3" in msg.subject
+
+    def test_multipart_inner_message(self):
+        """Inner message with text/plain + text/html extracts the plain text."""
+        from mail_monitor import MailMonitor
+        import quopri
+        from email.mime.base import MIMEBase
+
+        # Build inner message as multipart/alternative
+        inner = MIMEMultipart("alternative")
+        inner["From"] = "Alice <alice@example.com>"
+        inner["Subject"] = "Q3 forecast"
+        inner["Date"] = "Mon, 15 Mar 2026 10:30:00 -0700"
+        inner.attach(MIMEText("Plain text recession forecast at 25%.", "plain", "utf-8"))
+        inner.attach(MIMEText("<p>HTML recession forecast at 25%.</p>", "html", "utf-8"))
+        inner_bytes = inner.as_bytes()
+
+        # Wrap in moderation email
+        outer = MIMEMultipart("mixed")
+        outer["From"] = "group+msgappr@googlegroups.com"
+        outer["Subject"] = "group - Google Groups: Message Pending [{abc}]"
+        outer["Date"] = "Mon, 15 Mar 2026 11:00:00 -0700"
+        outer["Message-ID"] = "<mod-multi@googlegroups.com>"
+        outer.attach(MIMEText("A message is awaiting approval.\n", "plain", "utf-8"))
+        attachment = MIMEBase("message", "rfc822")
+        attachment["Content-Transfer-Encoding"] = "quoted-printable"
+        attachment.set_payload(quopri.encodestring(inner_bytes).decode("ascii"))
+        outer.attach(attachment)
+
+        raw = outer.as_bytes()
+        msg = MailMonitor._parse_moderation_email(raw, uid="302")
+        assert msg.sender == "Alice <alice@example.com>"
+        assert msg.subject == "Q3 forecast"
+        assert "Plain text recession forecast" in msg.body
+        assert "HTML" not in msg.body
+
+    def test_html_only_inner_message(self):
+        """Inner message with only text/html — body is empty (no plain text)."""
+        from mail_monitor import MailMonitor
+        import quopri
+        from email.mime.base import MIMEBase
+
+        inner = MIMEMultipart("alternative")
+        inner["From"] = "Bob <bob@example.com>"
+        inner["Subject"] = "HTML forecast"
+        inner["Date"] = "Mon, 15 Mar 2026 10:30:00 -0700"
+        inner.attach(MIMEText("<p>My forecast: 30% chance of recession.</p>", "html", "utf-8"))
+        inner_bytes = inner.as_bytes()
+
+        outer = MIMEMultipart("mixed")
+        outer["From"] = "group+msgappr@googlegroups.com"
+        outer["Subject"] = "group - Google Groups: Message Pending [{def}]"
+        outer["Date"] = "Mon, 15 Mar 2026 11:00:00 -0700"
+        outer["Message-ID"] = "<mod-html@googlegroups.com>"
+        outer.attach(MIMEText("Awaiting approval.\n", "plain", "utf-8"))
+        attachment = MIMEBase("message", "rfc822")
+        attachment["Content-Transfer-Encoding"] = "quoted-printable"
+        attachment.set_payload(quopri.encodestring(inner_bytes).decode("ascii"))
+        outer.attach(attachment)
+
+        raw = outer.as_bytes()
+        msg = MailMonitor._parse_moderation_email(raw, uid="303")
+        assert msg.sender == "Bob <bob@example.com>"
+        assert msg.body == ""
+
+    def test_google_groups_message_pending_subject(self):
+        """Plain-text moderation with 'Google Groups: Message Pending' prefix strips correctly."""
+        from mail_monitor import MailMonitor
+        raw = _make_moderation_email(
+            subject="forecast-chat - Google Groups: Message Pending My recession model",
+        )
+        msg = MailMonitor._parse_moderation_email(raw, uid="304")
+        assert msg.subject == "My recession model"
+
+    def test_multiple_reply_to_addresses(self):
+        """Multiple comma-separated Reply-To — parseaddr can't handle multiple addresses.
+
+        parseaddr is designed for single addresses. Comma-separated lists
+        confuse it, returning empty string. This documents the current behavior.
+        """
+        from mail_monitor import MailMonitor
+        msg_obj = MIMEText(SAMPLE_MODERATION_BODY, "plain", "utf-8")
+        msg_obj["Subject"] = "[group] Please approve or reject: Test"
+        msg_obj["From"] = "group@googlegroups.com"
+        msg_obj["Reply-To"] = "approve-1@googlegroups.com, approve-2@googlegroups.com"
+        msg_obj["Date"] = "Mon, 15 Mar 2026 10:30:00 -0700"
+        msg_obj["Message-ID"] = "<multi-reply@googlegroups.com>"
+        raw = msg_obj.as_bytes()
+        msg = MailMonitor._parse_moderation_email(raw, uid="305")
+        # parseaddr returns empty for comma-separated addresses (known limitation)
+        assert msg.reply_to == ""
+
+    def test_non_ascii_sender_in_inner(self):
+        """Inner message with non-ASCII display name — stored as raw MIME encoding.
+
+        Like the subject, the compat32 policy doesn't auto-decode From headers.
+        """
+        from mail_monitor import MailMonitor
+        from email.header import Header
+        encoded_from = str(Header("José García", "utf-8")) + " <jose@example.com>"
+        raw = _make_multipart_moderation_email(inner_from=encoded_from)
+        msg = MailMonitor._parse_moderation_email(raw, uid="306")
+        # compat32 policy returns raw MIME-encoded header
+        assert "utf-8" in msg.sender
+
+    def test_inner_message_empty_subject(self):
+        """Inner message with empty subject — subject is empty string."""
+        from mail_monitor import MailMonitor
+        raw = _make_multipart_moderation_email(inner_subject="")
+        msg = MailMonitor._parse_moderation_email(raw, uid="307")
+        assert msg.subject == ""
+        # mod_subject should still have the outer subject
+        assert "Google Groups" in msg.mod_subject
+
+
 class TestMarkSeen:
     """Test MailMonitor.mark_seen() IMAP flag-setting logic."""
 
