@@ -327,15 +327,11 @@ class TestSpamBoundaries:
         assert result["decision"] == "hold"
 
     def test_partial_spam_keyword_not_matched(self):
-        """Partial keyword 'buying' doesn't match '\\bbuy\\s+crypto' — word boundary prevents it."""
+        """'buying' doesn't match '\\bbuy\\s+crypto' — no whitespace after 'buy' in 'buying'."""
         body = "I've been buying cryptocurrency ETFs as a hedge against inflation"
         result = check_spam("Portfolio update", body)
-        # "buying cryptocurrency" != "buy crypto|bitcoin|ethereum|nft"
-        # "buying" matches \bbuy but then needs \s+ and (bitcoin|crypto|...)
-        # "buying cryptocurrency" has "buying" not "buy" — but \b matches at word boundary
-        # Actually \bbuy\s+ would NOT match "buying" because "buying" != "buy" + whitespace
-        # The \b is before "buy", and "buying" starts with "buy" but continues with "ing"
-        # So the regex tries to match "buy\s+" but "buying" has no whitespace after "buy"
+        # "buying" starts with "buy" but the regex needs \s+ after "buy",
+        # and the next char in "buying" is "i" not whitespace
         assert result is None
 
     def test_spam_keyword_case_insensitive(self):
@@ -353,3 +349,19 @@ class TestCorpusCoverage:
         for check_name in ALL_CHECKS:
             tagged = [c for c in CORPUS if check_name in c.tags]
             assert len(tagged) >= 2, f"checks/{check_name}.py needs at least 2 corpus entries in tests/email_corpus.py"
+            catches = [c for c in tagged if c.expected_decision is not None]
+            passthru = [c for c in tagged if c.expected_decision is None]
+            assert len(catches) >= 1, f"checks/{check_name}.py needs at least 1 catch corpus entry"
+            assert len(passthru) >= 1, f"checks/{check_name}.py needs at least 1 pass-through corpus entry"
+
+    def test_all_checks_matches_check_modules(self):
+        """ALL_CHECKS must list every check module in checks/ directory."""
+        import pkgutil
+        import checks
+        module_names = [
+            name for _, name, _ in pkgutil.iter_modules(checks.__path__)
+        ]
+        for name in module_names:
+            assert name in ALL_CHECKS, f"checks/{name}.py exists but is not in ALL_CHECKS"
+        for name in ALL_CHECKS:
+            assert name in module_names, f"ALL_CHECKS lists '{name}' but checks/{name}.py does not exist"

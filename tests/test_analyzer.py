@@ -179,6 +179,7 @@ class TestTrimForAnalysis:
         assert "FYI, relevant" in result
         # Forwarded separator is preserved (not a recognized header)
         assert "Forwarded message" in result
+        assert "22% chance of recession" in result
 
     def test_very_long_email_signature_near_middle(self):
         """Signature marker near the middle strips from that point (known limitation)."""
