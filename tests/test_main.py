@@ -213,6 +213,7 @@ class TestMainFlow:
         mock_monitor = MagicMock()
         mock_monitor.connect = AsyncMock()
         mock_monitor.disconnect = AsyncMock()
+        mock_monitor.mark_seen = AsyncMock()
 
         with patch("main.run_tui", return_value=msgs), \
              patch("main._make_monitor", return_value=mock_monitor), \
@@ -256,7 +257,67 @@ class TestMainFlow:
 
             from main import main_flow
             main_flow()
-            assert mock_asyncio.run.call_count == 1
+            # 2 calls: fetch_and_analyze + do_post_tui (mark_seen even without approvals)
+            assert mock_asyncio.run.call_count == 2
+
+    def test_mark_seen_called_with_approvals(self):
+        """After TUI approves some messages, mark_seen is called for ALL fetched messages."""
+        import asyncio
+        _original_run = asyncio.run
+        msgs = [_make_msg(id="0"), _make_msg(id="1")]
+
+        mock_monitor = MagicMock()
+        mock_monitor.connect = AsyncMock()
+        mock_monitor.disconnect = AsyncMock()
+        mock_monitor.mark_seen = AsyncMock()
+
+        with patch("main.run_tui", return_value=[msgs[0]]), \
+             patch("main._make_monitor", return_value=mock_monitor), \
+             patch("main.approve_messages", new_callable=AsyncMock), \
+             patch("main.fetch_and_analyze"), \
+             patch("builtins.print"):
+
+            call_count = []
+
+            def run_side_effect(coro):
+                call_count.append(1)
+                if len(call_count) == 1:
+                    return msgs
+                return _original_run(coro)
+
+            with patch("main.asyncio.run", side_effect=run_side_effect):
+                from main import main_flow
+                main_flow()
+                mock_monitor.mark_seen.assert_awaited_once_with(msgs)
+
+    def test_mark_seen_called_no_approvals(self):
+        """After TUI exits with no approvals, mark_seen is still called for all messages."""
+        import asyncio
+        _original_run = asyncio.run
+        msgs = [_make_msg(id="0"), _make_msg(id="1")]
+
+        mock_monitor = MagicMock()
+        mock_monitor.connect = AsyncMock()
+        mock_monitor.disconnect = AsyncMock()
+        mock_monitor.mark_seen = AsyncMock()
+
+        with patch("main.run_tui", return_value=None), \
+             patch("main._make_monitor", return_value=mock_monitor), \
+             patch("main.fetch_and_analyze"), \
+             patch("builtins.print"):
+
+            call_count = []
+
+            def run_side_effect(coro):
+                call_count.append(1)
+                if len(call_count) == 1:
+                    return msgs
+                return _original_run(coro)
+
+            with patch("main.asyncio.run", side_effect=run_side_effect):
+                from main import main_flow
+                main_flow()
+                mock_monitor.mark_seen.assert_awaited_once_with(msgs)
 
 
 # ── auto_approve_flow ──────────────────────────────────────────
@@ -272,6 +333,7 @@ class TestAutoApproveFlow:
         mock_monitor.connect = AsyncMock()
         mock_monitor.disconnect = AsyncMock()
         mock_monitor.approve_messages = AsyncMock(return_value={"0": True})
+        mock_monitor.mark_seen = AsyncMock()
 
         with patch("main.fetch_and_analyze", new_callable=AsyncMock, return_value=[ok_msg, hold_msg]), \
              patch("main.MailMonitor", return_value=mock_monitor), \
@@ -298,10 +360,51 @@ class TestAutoApproveFlow:
     async def test_all_hold(self):
         hold_msg = _make_msg(ai_rec="hold")
 
+        mock_monitor = MagicMock()
+        mock_monitor.connect = AsyncMock()
+        mock_monitor.disconnect = AsyncMock()
+        mock_monitor.mark_seen = AsyncMock()
+
         with patch("main.fetch_and_analyze", new_callable=AsyncMock, return_value=[hold_msg]), \
+             patch("main.MailMonitor", return_value=mock_monitor), \
+             patch("main.config") as mock_config, \
              patch("builtins.print"):
+            mock_config.IMAP_HOST = "imap.gmail.com"
+            mock_config.SMTP_HOST = "smtp.gmail.com"
+            mock_config.SMTP_PORT = 587
+            mock_config.GOOGLE_EMAIL = "test@example.com"
+            mock_config.GOOGLE_PASSWORD = "secret"
+            mock_config.GROUP_EMAIL = "group@googlegroups.com"
             from main import auto_approve_flow
             await auto_approve_flow()
+            mock_monitor.mark_seen.assert_awaited_once_with([hold_msg])
+
+    @pytest.mark.asyncio
+    async def test_mark_seen_called_for_held_messages(self):
+        """After approving ok messages, mark_seen is called for held messages."""
+        ok_msg = _make_msg(id="0", ai_rec="approve")
+        hold_msg = _make_msg(id="1", ai_rec="hold")
+        hold_msg.status = "hold"
+
+        mock_monitor = MagicMock()
+        mock_monitor.connect = AsyncMock()
+        mock_monitor.disconnect = AsyncMock()
+        mock_monitor.approve_messages = AsyncMock(return_value={"0": True})
+        mock_monitor.mark_seen = AsyncMock()
+
+        with patch("main.fetch_and_analyze", new_callable=AsyncMock, return_value=[ok_msg, hold_msg]), \
+             patch("main.MailMonitor", return_value=mock_monitor), \
+             patch("main.config") as mock_config, \
+             patch("builtins.print"):
+            mock_config.IMAP_HOST = "imap.gmail.com"
+            mock_config.SMTP_HOST = "smtp.gmail.com"
+            mock_config.SMTP_PORT = 587
+            mock_config.GOOGLE_EMAIL = "test@example.com"
+            mock_config.GOOGLE_PASSWORD = "secret"
+            mock_config.GROUP_EMAIL = "group@googlegroups.com"
+            from main import auto_approve_flow
+            await auto_approve_flow()
+            mock_monitor.mark_seen.assert_awaited_once_with([hold_msg])
 
 
 # ── main() CLI dispatch ───────────────────────────────────────

@@ -663,3 +663,111 @@ class TestApproveMessages:
             results = await monitor.approve_messages([])
 
         assert results == {}
+
+
+class TestMarkSeen:
+    """Test MailMonitor.mark_seen() IMAP flag-setting logic."""
+
+    def _make_pending(self, *, uid="100"):
+        from mail_monitor import PendingMessage
+        return PendingMessage(
+            id="<mod@example.com>", sender="alice@example.com",
+            subject="Test", snippet="snip", body="body", date="2026-03-15",
+            reply_to="approve@googlegroups.com", message_uid=uid,
+        )
+
+    @pytest.mark.asyncio
+    async def test_marks_each_message_as_seen(self):
+        from mail_monitor import MailMonitor
+        msg1 = self._make_pending(uid="10")
+        msg2 = self._make_pending(uid="11")
+        mock_client = _mock_imap_client()
+
+        monitor = MailMonitor(
+            imap_host="imap.gmail.com",
+            email_address="mod@example.com",
+            password="secret",
+            group_email="group@googlegroups.com",
+        )
+        monitor._imap = mock_client
+
+        await monitor.mark_seen([msg1, msg2])
+
+        store_calls = [
+            c for c in mock_client.uid.call_args_list
+            if c[0][0] == "store"
+        ]
+        assert len(store_calls) == 2
+        assert store_calls[0][0] == ("store", "10", "+FLAGS", r"(\Seen)")
+        assert store_calls[1][0] == ("store", "11", "+FLAGS", r"(\Seen)")
+
+    @pytest.mark.asyncio
+    async def test_skips_empty_uid(self):
+        from mail_monitor import MailMonitor
+        msg_with_uid = self._make_pending(uid="10")
+        msg_no_uid = self._make_pending(uid="")
+        mock_client = _mock_imap_client()
+
+        monitor = MailMonitor(
+            imap_host="imap.gmail.com",
+            email_address="mod@example.com",
+            password="secret",
+            group_email="group@googlegroups.com",
+        )
+        monitor._imap = mock_client
+
+        await monitor.mark_seen([msg_no_uid, msg_with_uid])
+
+        store_calls = [
+            c for c in mock_client.uid.call_args_list
+            if c[0][0] == "store"
+        ]
+        assert len(store_calls) == 1
+        assert store_calls[0][0][1] == "10"
+
+    @pytest.mark.asyncio
+    async def test_continues_on_individual_failure(self):
+        from mail_monitor import MailMonitor
+        msg1 = self._make_pending(uid="10")
+        msg2 = self._make_pending(uid="11")
+        mock_client = _mock_imap_client()
+
+        async def fake_uid(command, uid_str, *args):
+            resp = MagicMock()
+            if command == "store" and uid_str == "10":
+                raise Exception("IMAP store failed")
+            resp.result = "OK"
+            resp.lines = []
+            return resp
+        mock_client.uid = AsyncMock(side_effect=fake_uid)
+
+        monitor = MailMonitor(
+            imap_host="imap.gmail.com",
+            email_address="mod@example.com",
+            password="secret",
+            group_email="group@googlegroups.com",
+        )
+        monitor._imap = mock_client
+
+        # Should not raise — continues despite first failure
+        await monitor.mark_seen([msg1, msg2])
+
+        # Second message was still attempted
+        assert mock_client.uid.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_empty_list_is_noop(self):
+        from mail_monitor import MailMonitor
+        mock_client = _mock_imap_client()
+
+        monitor = MailMonitor(
+            imap_host="imap.gmail.com",
+            email_address="mod@example.com",
+            password="secret",
+            group_email="group@googlegroups.com",
+        )
+        monitor._imap = mock_client
+
+        await monitor.mark_seen([])
+
+        mock_client.uid.assert_not_awaited()
