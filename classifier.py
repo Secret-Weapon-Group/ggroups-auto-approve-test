@@ -14,6 +14,7 @@ import os
 import re
 
 from anthropic import AsyncAnthropic, APIStatusError
+from openai import AsyncOpenAI
 
 from checks import run_all_checks
 from config import DEFAULT_MODEL, resolve_model
@@ -74,20 +75,24 @@ async def classify_message(
 
     # Layer 2: LLM classification
     try:
-        key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
-        client = AsyncAnthropic(api_key=key)
-
         user_content = f"Subject: {subject}\nFrom: {sender}\n\nMessage body:\n{body}"
+        if model == "slm":
+            client = AsyncOpenAI(base_url="https://litellm.sandbox.neurometric.xyz/v1", api_key=os.environ.get("LITELLM_API_KEY", ""))
+            response = await client.chat.completions.create(model=resolve_model(model), max_tokens=150, 
+                                messages=[{"role": "system", "content": SYSTEM_PROMPT},{"role": "user", "content": user_content}])
+            result_text = _strip_markdown_fences(response.choices[0].message.content.strip())
+        else:
+            key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+            client = AsyncAnthropic(api_key=key)
 
-        response = await _api_call_with_retry(
-            client,
-            model=resolve_model(model),
-            max_tokens=150,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_content}],
-        )
-
-        result_text = _strip_markdown_fences(response.content[0].text.strip())
+            response = await _api_call_with_retry(
+                client,
+                model=resolve_model(model),
+                max_tokens=150,
+                system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_content}],
+            )
+            result_text = _strip_markdown_fences(response.content[0].text.strip())
 
         try:
             result = json.loads(result_text)
