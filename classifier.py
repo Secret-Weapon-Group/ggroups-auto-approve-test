@@ -77,7 +77,7 @@ async def classify_message(
     try:
         user_content = f"Subject: {subject}\nFrom: {sender}\n\nMessage body:\n{body}"
         if model == "slm":
-            client = AsyncOpenAI(base_url="https://litellm.sandbox.neurometric.xyz/v1", api_key=os.environ.get("LITELLM_API_KEY", ""))
+            client = AsyncOpenAI(base_url="https://litellm.neurometric.ai/v1", api_key=os.environ.get("LITELLM_API_KEY", ""))
             response = await client.chat.completions.create(model=resolve_model(model), max_tokens=150, 
                                 messages=[{"role": "system", "content": SYSTEM_PROMPT},{"role": "user", "content": user_content}])
             result_text = _strip_markdown_fences(response.choices[0].message.content.strip())
