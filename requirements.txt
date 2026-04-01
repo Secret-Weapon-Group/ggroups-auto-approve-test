@@ -1,5 +1,6 @@
 textual
 anthropic
+openai
 python-dotenv
 aioimaplib
 aiosmtplib
